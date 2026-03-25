@@ -1,260 +1,282 @@
-# DEVELOPMENT_PLAN.md — Applied Logic
+# DEVELOPMENT_PLAN.md — Promptly Employed
 
-> AI-powered job application pipeline. Automatically ingests job postings, runs Playwright-based scraping on Lambda, processes through an AI analysis brain via AWS Step Functions, and surfaces results through a Next.js 15 control plane.
+> AI-powered CV tailoring engine. The user pastes their master resume and a target job description; an AWS Step Functions workflow drafts a tailored CV via Claude 3.7 Sonnet, then runs it through a Claude 3 Haiku quality critique. Results are stored in S3 (Markdown) and DynamoDB (metadata/status).
 
 ---
 
 ## Project Overview
 
-**Product:** Applied Logic
-**Type:** AI Job Pipeline (monorepo)
-**Date:** 2026-03-17
+**Product:** Promptly Employed
+**Type:** AI CV Tailoring Pipeline (monorepo)
+**Date:** 2026-03-25
+**Current Phase:** Phase 1 — Core AI Tailoring Engine (MVP)
 
 ### Stack
 
 | Layer | Technology |
 |---|---|
 | Frontend / Hosting | Next.js 15 (App Router) on AWS Amplify Hosting |
-| Orchestration | AWS Step Functions (Express Workflows) |
-| Scraping Runtime | Playwright on Docker-based AWS Lambda |
-| AI Models | Amazon Bedrock — Claude 3.7 Sonnet (analysis) + Claude Haiku (critique/scoring) |
-| Database | Amazon DynamoDB (job state + results) |
-| Polling | Next.js API Routes → DynamoDB |
+| Orchestration | Next.js API Route → AWS Step Functions (Express Workflow) |
+| AI — Draft | Amazon Bedrock — Claude 3.7 Sonnet (tailored CV drafting) |
+| AI — Critique | Amazon Bedrock — Claude 3 Haiku (quality critique & scoring) |
+| File Storage | Amazon S3 (tailored CV Markdown output) |
+| Metadata / Status | Amazon DynamoDB (job record + polling status) |
 | Package Manager | pnpm workspaces |
 
-### Monorepo Structure
+---
+
+## Phased Roadmap
+
+### Phase 1 — Core AI Tailoring Engine (MVP) ← *current*
+
+Manual input. The user provides both the raw text of their master resume and the target job description via text areas in the UI. No scraping, no external job board integration.
+
+### Phase 2 — Automated Job Discovery (Future)
+
+Replace the manual job description input with an automated pipeline:
+
+- **SerpApi** — query Google Jobs for live Australian listings matching a target role/location
+- **Playwright on Lambda** — scrape full job description text from **Seek** and **LinkedIn AU** for listings that lack structured data
+- Same Step Functions CV tailoring workflow is reused unchanged downstream
+
+---
+
+## Monorepo Structure (pnpm workspaces)
 
 ```
 /
 ├── packages/
-│   ├── infra/          # AWS CDK stacks (Step Functions, Lambda, DynamoDB, Amplify)
-│   ├── web/            # Next.js 15 application (App Router)
-│   └── shared/         # TypeScript types, utilities, constants shared across packages
+│   ├── infra/                        # AWS CDK stack (all Phase 1 resources)
+│   │   ├── lib/
+│   │   │   └── promptly-employed-stack.ts
+│   │   ├── lambda/
+│   │   │   ├── draft-cv/             # DraftCVLambda — Claude 3.7 Sonnet
+│   │   │   │   └── index.ts
+│   │   │   └── critique-cv/          # CritiqueCVLambda — Claude 3 Haiku
+│   │   │       └── index.ts
+│   │   ├── cdk.json
+│   │   └── package.json
+│   ├── web/                          # Next.js 15 application (App Router)
+│   │   ├── src/
+│   │   │   └── app/
+│   │   │       ├── page.tsx          # Manual input form (resume + JD)
+│   │   │       ├── jobs/
+│   │   │       │   └── [jobId]/
+│   │   │       │       └── page.tsx  # Status polling + result display
+│   │   │       └── api/
+│   │   │           └── jobs/
+│   │   │               ├── route.ts          # POST — submit job
+│   │   │               └── [jobId]/
+│   │   │                   └── route.ts      # GET — poll status
+│   │   └── package.json
+│   └── shared/                       # Zod schemas, types, prompt builders
+│       ├── src/
+│       │   ├── schemas.ts            # Zod schemas (source of truth)
+│       │   ├── prompts.ts            # Prompt builder functions
+│       │   └── index.ts              # Barrel export
+│       └── package.json
 ├── pnpm-workspace.yaml
+├── tsconfig.base.json
 ├── package.json
 └── DEVELOPMENT_PLAN.md
 ```
 
 ---
 
-## Core TypeScript Interfaces
+## Zod Schemas (Phase 1)
 
-Defined in `packages/shared/src/types.ts` and imported across all packages.
+Defined in `packages/shared/src/schemas.ts`. These are the canonical runtime types — TypeScript types are inferred from them via `z.infer`.
 
 ```ts
-// packages/shared/src/types.ts
+import { z } from "zod";
 
-export type JobStatus =
-  | "PENDING"
-  | "SCRAPING"
-  | "ANALYSING"
-  | "CRITIQUE"
-  | "COMPLETE"
-  | "FAILED";
+// ── Inbound payload ────────────────────────────────────────────────────────
 
-export interface JobPayload {
-  jobId: string;                      // UUID v4 — primary key in DynamoDB
-  url: string;                        // Raw job posting URL submitted by user
-  submittedAt: string;                // ISO 8601 timestamp
-  status: JobStatus;
-  userId?: string;                    // Optional — for multi-tenant future extension
-  metadata?: Record<string, unknown>; // Arbitrary scrape-time metadata (source, region, etc.)
-}
+export const JobSubmissionSchema = z.object({
+  masterResume: z
+    .string()
+    .min(200, "Master resume must be at least 200 characters"),
+  jobDescription: z
+    .string()
+    .min(50, "Job description must be at least 50 characters"),
+});
 
-export interface CVOutput {
-  jobId: string;           // FK → JobPayload.jobId
-  completedAt: string;     // ISO 8601 timestamp
-  jobTitle: string;
-  company: string;
-  location: string;
-  salaryRange?: string;
-  keyRequirements: string[]; // Extracted must-have skills / qualifications
-  niceToHave: string[];      // Extracted preferred / bonus qualifications
-  summary: string;           // Claude 3.7 Sonnet: 2–3 sentence role summary
-  fitScore: number;          // 0–100: Claude Haiku critique score
-  fitRationale: string;      // Claude Haiku: short scoring explanation
-  redFlags: string[];        // Claude Haiku: identified risks or concerns
-  rawMarkdown?: string;      // Full scraped page content (optional, for debugging)
-}
+export type JobSubmission = z.infer<typeof JobSubmissionSchema>;
+
+// ── Job lifecycle ──────────────────────────────────────────────────────────
+
+export const JobStatusSchema = z.enum([
+  "PENDING",   // record created, Step Function not yet started
+  "DRAFTING",  // DraftCVLambda running (Claude 3.7 Sonnet)
+  "CRITIQUE",  // CritiqueCVLambda running (Claude 3 Haiku)
+  "COMPLETE",  // results persisted to S3 + DynamoDB
+  "FAILED",    // terminal error at any stage
+]);
+
+export type JobStatus = z.infer<typeof JobStatusSchema>;
+
+// ── DynamoDB record ────────────────────────────────────────────────────────
+
+export const JobRecordSchema = z.object({
+  jobId: z.string().uuid(),
+  submittedAt: z.string().datetime(),
+  status: JobStatusSchema,
+  s3Key: z.string().optional(),       // set once COMPLETE; path to Markdown in S3
+  errorMessage: z.string().optional(), // set on FAILED
+});
+
+export type JobRecord = z.infer<typeof JobRecordSchema>;
+
+// ── Step Function input/output ─────────────────────────────────────────────
+
+export const StepFunctionInputSchema = z.object({
+  jobId: z.string().uuid(),
+  masterResume: z.string(),
+  jobDescription: z.string(),
+});
+
+export type StepFunctionInput = z.infer<typeof StepFunctionInputSchema>;
+
+// ── AI output ─────────────────────────────────────────────────────────────
+
+export const TailoredCVOutputSchema = z.object({
+  jobId: z.string().uuid(),
+  completedAt: z.string().datetime(),
+  tailoredMarkdown: z.string().min(1),  // full CV draft from Claude 3.7 Sonnet
+  critiqueNotes: z.string().min(1),     // qualitative feedback from Claude 3 Haiku
+  fitScore: z.number().int().min(0).max(100), // 0–100 score from Claude 3 Haiku
+  fitRationale: z.string(),             // one-paragraph scoring explanation
+  suggestedImprovements: z.array(z.string()), // actionable bullet points
+});
+
+export type TailoredCVOutput = z.infer<typeof TailoredCVOutputSchema>;
 ```
 
 ---
 
-## Sprint 1 — Ingestion
+## AWS CDK Resources (Phase 1)
 
-**Goal:** Accept a job URL, persist it to DynamoDB, and trigger the Step Functions workflow.
+All resources are defined in a single `PromptlyEmployedStack` in `packages/infra/lib/promptly-employed-stack.ts`.
 
-### Tasks
+### 1 — S3 Bucket: `PromptlyEmployedResults`
 
-1. **Monorepo bootstrap**
-   - Initialise `pnpm-workspace.yaml` declaring `packages/*`
-   - Create `packages/shared`, `packages/web`, `packages/infra` with individual `package.json` files
-   - Configure `tsconfig.base.json` at root; extend per package
-   - Add `eslint`, `prettier`, and `turbo` (or `pnpm -r`) for cross-package scripting
+| Property | Value |
+|---|---|
+| Purpose | Store tailored CV drafts as Markdown files |
+| Key pattern | `results/{jobId}/tailored-cv.md` |
+| Versioning | Disabled (Phase 1) |
+| Public access | Blocked — all access via Lambda role only |
+| Lifecycle rule | Expire objects after 90 days |
 
-2. **Shared types**
-   - Publish `JobPayload`, `CVOutput`, and `JobStatus` in `packages/shared/src/types.ts`
-   - Export via `packages/shared/src/index.ts`
+### 2 — DynamoDB Table: `PromptlyEmployedJobs`
 
-3. **DynamoDB table design** (`packages/infra`)
-   - Table name: `AppliedLogicJobs`
-   - Partition key: `jobId` (String)
-   - GSI: `userId-submittedAt-index` (for user-scoped listing, future-proofed)
-   - TTL attribute: `expiresAt` (optional, for auto-cleanup)
+| Property | Value |
+|---|---|
+| Purpose | Job metadata, lifecycle status, and S3 key reference |
+| Partition key | `jobId` (String, UUID v4) |
+| Billing mode | PAY_PER_REQUEST |
+| TTL attribute | `expiresAt` (auto-expire records after 30 days) |
+| GSI | None required for Phase 1 (single-user, no multi-tenancy) |
 
-4. **Ingestion API route** (`packages/web/src/app/api/jobs/route.ts`)
-   - `POST /api/jobs` — validates URL, generates `jobId` (UUID), writes `JobPayload` with `status: "PENDING"` to DynamoDB, then calls `StartExecution` on the Step Functions state machine
-   - `GET /api/jobs` — lists jobs for polling (returns `jobId`, `status`, `submittedAt`)
+### 3 — Lambda: `DraftCVLambda`
 
-5. **Submission UI** (`packages/web/src/app/page.tsx`)
-   - Single-field form: URL input → POST → redirect to `/jobs/[jobId]`
-   - Basic loading state
+| Property | Value |
+|---|---|
+| Purpose | Node 1 of the Step Function — calls Claude 3.7 Sonnet to draft the tailored CV |
+| Runtime | Node.js 22.x |
+| Handler | `packages/infra/lambda/draft-cv/index.handler` |
+| Memory | 512 MB |
+| Timeout | 5 minutes |
+| Input | `{ jobId, masterResume, jobDescription }` |
+| Output | `{ jobId, tailoredMarkdown }` |
+| Bedrock model | `anthropic.claude-3-7-sonnet-20250219-v1:0` |
+| IAM grants | DynamoDB `PutItem` / `UpdateItem`, Bedrock `InvokeModel`, S3 `PutObject` |
+| Status transition | Sets DynamoDB record to `DRAFTING` on start |
 
-### Acceptance Criteria
+### 4 — Lambda: `CritiqueCVLambda`
 
-- Submitting a valid URL creates a DynamoDB record with `status: "PENDING"`
-- Step Functions execution is started with the correct `jobId` input
-- Invalid URLs (non-HTTP/HTTPS) return `400`
+| Property | Value |
+|---|---|
+| Purpose | Node 2 of the Step Function — calls Claude 3 Haiku to critique and score the draft |
+| Runtime | Node.js 22.x |
+| Handler | `packages/infra/lambda/critique-cv/index.handler` |
+| Memory | 256 MB |
+| Timeout | 3 minutes |
+| Input | `{ jobId, tailoredMarkdown, jobDescription }` |
+| Output | `{ jobId, critiqueNotes, fitScore, fitRationale, suggestedImprovements }` |
+| Bedrock model | `anthropic.claude-3-haiku-20240307-v1:0` |
+| IAM grants | DynamoDB `UpdateItem`, Bedrock `InvokeModel`, S3 `PutObject` |
+| Status transition | Sets DynamoDB record to `CRITIQUE` on start, `COMPLETE` on success |
 
----
+### 5 — Step Functions Express Workflow: `TailorCVWorkflow`
 
-## Sprint 2 — Infrastructure
+```
+StartExecution (called from POST /api/jobs)
+        │
+        ▼
+┌──────────────────┐     on error      ┌──────────────────┐
+│  DraftCVLambda   │ ─────────────────▶│  HandleFailure   │
+│  (Claude 3.7)    │                   │  status→FAILED   │
+└────────┬─────────┘                   └──────────────────┘
+         │
+         ▼
+┌──────────────────┐     on error      ┌──────────────────┐
+│ CritiqueCVLambda │ ─────────────────▶│  HandleFailure   │
+│  (Claude Haiku)  │                   │  status→FAILED   │
+└────────┬─────────┘                   └──────────────────┘
+         │
+         ▼
+      COMPLETE
+  (S3 + DynamoDB written
+   by CritiqueCVLambda)
+```
 
-**Goal:** Stand up all AWS infrastructure via CDK and wire together Lambda, Step Functions, and Amplify.
-
-### Tasks
-
-1. **CDK stack scaffold** (`packages/infra/lib/applied-logic-stack.ts`)
-   - Single `AppliedLogicStack` exporting all constructs
-   - Deploy target: `us-east-1` (configurable via CDK context)
-
-2. **Playwright Lambda (Docker)**
-   - Dockerfile in `packages/infra/docker/playwright/`
-   - Base image: `public.ecr.aws/lambda/nodejs:20` + Playwright Chromium install
-   - Lambda function: `ScrapeJobLambda` — receives `{ jobId, url }`, runs Playwright, returns raw markdown/HTML, updates DynamoDB `status → "SCRAPING"`
-   - Memory: 2048 MB, timeout: 5 min
-   - ECR repository provisioned via CDK; image built + pushed in CI
-
-3. **Step Functions Express Workflow**
-   - States:
-     1. `ScrapeJob` → invoke `ScrapeJobLambda`
-     2. `AnalyseJob` → invoke `AnalyseLambda` (Bedrock: Claude 3.7 Sonnet)
-     3. `CritiqueJob` → invoke `CritiqueLambda` (Bedrock: Claude Haiku)
-     4. `PersistResult` → write `CVOutput` to DynamoDB, set `status → "COMPLETE"`
-     5. `HandleFailure` (Catch on all states) → set `status → "FAILED"`, write error message
-   - Status updates written to DynamoDB at each state transition
-
-4. **IAM roles & policies**
-   - Lambda execution roles: DynamoDB read/write, Bedrock `InvokeModel`
-   - Step Functions execution role: Lambda invoke
-   - Amplify service role: read SSM parameters for env vars
-
-5. **Amplify Hosting**
-   - Connect to repository (GitHub)
-   - Build spec: `pnpm install && pnpm --filter web build`
-   - Environment variables: `DYNAMODB_TABLE_NAME`, `STATE_MACHINE_ARN`, `AWS_REGION`
-   - Branch: `main → production`, `develop → preview`
-
-6. **CDK deploy pipeline**
-   - `pnpm --filter infra cdk deploy` script
-   - Outputs: State Machine ARN, DynamoDB table name (consumed as Amplify env vars)
-
-### Acceptance Criteria
-
-- `cdk deploy` completes without errors
-- Playwright Lambda cold-starts successfully against a test URL
-- Step Functions execution graph visible in AWS Console
-- Amplify build succeeds from `main` branch
+| Property | Value |
+|---|---|
+| Type | Express Workflow (synchronous-style, async invocation from API) |
+| Execution timeout | 10 minutes |
+| Error handling | `Catch` on all states → `HandleFailure` task (Lambda or direct DynamoDB SDK integration) |
+| IAM | Step Functions execution role with `lambda:InvokeFunction` on both Lambda ARNs |
 
 ---
 
-## Sprint 3 — AI Brain
+## Definition of Done — Phase 1
 
-**Goal:** Implement the two-model Bedrock analysis pipeline (Claude 3.7 Sonnet → Claude Haiku critique).
+The Phase 1 MVP is complete when **all** of the following are true:
 
-### Tasks
+### Functional
 
-1. **`AnalyseLambda`** (`packages/infra/lambda/analyse/index.ts`)
-   - Input: `{ jobId, rawMarkdown }`
-   - Bedrock call: `anthropic.claude-3-7-sonnet` via `@aws-sdk/client-bedrock-runtime`
-   - Prompt: structured extraction of `jobTitle`, `company`, `location`, `salaryRange`, `keyRequirements`, `niceToHave`, `summary`
-   - Output: partial `CVOutput` (all fields except fit scoring)
-   - Writes intermediate result to DynamoDB; updates `status → "ANALYSING"`
+- [ ] A user can paste a master resume (plain text) and a job description (plain text) into the web UI and submit the form
+- [ ] Submitting creates a `JobRecord` in DynamoDB with `status: "PENDING"` and triggers a Step Functions execution
+- [ ] `DraftCVLambda` produces a complete tailored CV in Markdown and writes it to S3
+- [ ] `CritiqueCVLambda` produces `critiqueNotes`, a `fitScore` (0–100), `fitRationale`, and `suggestedImprovements`
+- [ ] The final Markdown result is written to S3 at `results/{jobId}/tailored-cv.md`
+- [ ] DynamoDB record status progresses: `PENDING → DRAFTING → CRITIQUE → COMPLETE`
+- [ ] The UI polls `/api/jobs/[jobId]` and visually reflects each status transition
+- [ ] On `COMPLETE`, the UI renders the tailored CV Markdown, fit score, and critique notes
+- [ ] On `FAILED`, the UI shows a clear error message and allows resubmission
 
-2. **`CritiqueLambda`** (`packages/infra/lambda/critique/index.ts`)
-   - Input: `{ jobId, analysisResult }`
-   - Bedrock call: `anthropic.claude-3-haiku` — cheaper model used purely for scoring
-   - Prompt: given extracted job details, return `fitScore` (0–100), `fitRationale`, `redFlags`
-   - Merges with analysis result to produce full `CVOutput`
-   - Updates `status → "CRITIQUE"` on start, `status → "COMPLETE"` on success
+### Infrastructure
 
-3. **Prompt engineering** (`packages/shared/src/prompts.ts`)
-   - `buildAnalysisPrompt(rawMarkdown: string): string`
-   - `buildCritiquePrompt(analysis: Partial<CVOutput>): string`
-   - Prompts enforce JSON output (using Bedrock's `response_format` or XML-tagged outputs)
-   - Shared between Lambda packages and unit tests
+- [ ] `pnpm --filter infra cdk deploy` completes without errors in a clean AWS account
+- [ ] All IAM roles follow least-privilege (no wildcard actions or resources)
+- [ ] S3 bucket has public access fully blocked
+- [ ] DynamoDB TTL is configured and verified active
 
-4. **Response parsing & validation**
-   - Zod schemas in `packages/shared/src/schemas.ts` for safe runtime parsing of Bedrock responses
-   - Handles partial/malformed JSON gracefully; surfaces parse failures as `FAILED` status
+### Quality
 
-5. **Bedrock model IDs & config** (`packages/shared/src/config.ts`)
-   - Constants: `ANALYSIS_MODEL_ID`, `CRITIQUE_MODEL_ID`, `MAX_TOKENS_ANALYSIS`, `MAX_TOKENS_CRITIQUE`
+- [ ] Zod schemas validate all inbound API payloads; invalid submissions return `400` with a descriptive error
+- [ ] Malformed or incomplete Bedrock responses do not crash the state machine — they set `status: "FAILED"` with a stored error message
+- [ ] Unit tests pass for all Zod schemas, prompt builders, and Lambda handler logic (mocked AWS SDK)
+- [ ] `fitScore` is always a whole number in the range 0–100
 
-### Acceptance Criteria
+### Out of Scope for Phase 1
 
-- End-to-end Step Functions execution produces a valid `CVOutput` in DynamoDB
-- `fitScore` is always a number between 0–100
-- Malformed Bedrock response sets `status: "FAILED"` with an error message — does not crash the state machine
-- Unit tests pass for prompt builders and Zod schema parsers
-
----
-
-## Sprint 4 — Control Plane
-
-**Goal:** Build the Next.js UI for job tracking, result display, and real-time status polling.
-
-### Tasks
-
-1. **Polling hook** (`packages/web/src/hooks/useJobStatus.ts`)
-   - `GET /api/jobs/[jobId]` — fetches `JobPayload` + `CVOutput` if available
-   - Polls every 3 seconds while `status` is not `COMPLETE` or `FAILED`
-   - Uses `SWR` or `React Query` with `refreshInterval`
-
-2. **Job status API route** (`packages/web/src/app/api/jobs/[jobId]/route.ts`)
-   - `GET` — reads from DynamoDB by `jobId`, returns `{ payload: JobPayload, output?: CVOutput }`
-   - Returns `404` if `jobId` not found
-
-3. **Job detail page** (`packages/web/src/app/jobs/[jobId]/page.tsx`)
-   - Live status indicator: `PENDING → SCRAPING → ANALYSING → CRITIQUE → COMPLETE`
-   - On `COMPLETE`: render full `CVOutput` — fit score gauge, key requirements list, red flags, summary
-   - On `FAILED`: display error message with retry option (re-POSTs the same URL)
-
-4. **Job list page** (`packages/web/src/app/jobs/page.tsx`)
-   - Paginated list of all submitted jobs
-   - Columns: URL (truncated), status badge, submitted time, fit score (if complete)
-   - Link to individual job detail page
-
-5. **UI component library**
-   - `StatusBadge` — colour-coded per `JobStatus`
-   - `FitScoreGauge` — visual 0–100 arc/ring component
-   - `RequirementsList` — segmented list: key requirements vs. nice-to-have
-   - `RedFlagList` — highlighted warning cards
-
-6. **Error boundaries & loading states**
-   - Suspense boundaries on data-fetching server components
-   - Skeleton loaders while polling
-
-7. **Amplify environment variable wiring**
-   - `NEXT_PUBLIC_` prefixed vars for client-safe config (none contain secrets)
-   - Server-only vars (DynamoDB table name, State Machine ARN) via Amplify environment settings
-
-### Acceptance Criteria
-
-- Submitting a URL and navigating to `/jobs/[jobId]` shows live status transitions
-- `COMPLETE` state renders all `CVOutput` fields without layout breakage
-- `FAILED` state shows a user-friendly error and a functioning retry button
-- Polling stops once a terminal status (`COMPLETE` or `FAILED`) is reached
+- Automated job board scraping (Seek, LinkedIn AU) — deferred to Phase 2
+- Google Jobs search via SerpApi — deferred to Phase 2
+- Multi-user / authentication
+- CV version history or diffing
+- Email notifications
 
 ---
 
@@ -262,34 +284,32 @@ export interface CVOutput {
 
 ### Security
 
-- All Lambda roles follow least-privilege (no `*` actions or resources)
-- DynamoDB `jobId` is UUID v4 — not guessable; no auth bypass risk via enumeration
-- Bedrock prompts never include raw user-controlled strings in unsanitised form — URL is passed as a data field, not injected into prompt text directly
-- Amplify environment variables never exposed client-side unless `NEXT_PUBLIC_` prefixed
+- All Lambda execution roles are least-privilege — scoped to specific table/bucket ARNs, not `*`
+- `jobId` is UUID v4 — not guessable; status polling does not expose other users' data
+- Master resume and job description text are passed through Step Functions input only; never logged or stored beyond the DynamoDB record TTL
+- S3 bucket policy denies all public `GetObject`; only Lambda role may read/write
+- API route validates and sanitises payload via Zod before passing to AWS SDK calls
 
 ### Testing Strategy
 
 | Layer | Approach |
 |---|---|
-| Shared types/schemas | Vitest unit tests |
-| Prompt builders | Vitest unit tests with fixture inputs |
-| Lambda handlers | Vitest + mocked `@aws-sdk` clients |
+| Zod schemas | Vitest unit tests — valid and invalid fixture inputs |
+| Prompt builders | Vitest unit tests — assert structure and required sections present |
+| Lambda handlers | Vitest + mocked `@aws-sdk` clients (`vi.mock`) |
 | Next.js API routes | Vitest + `next-test-api-route-handler` |
-| E2E | Playwright (locally); skipped in CI until Sprint 4 complete |
+| CDK stack | `cdk synth` in CI to catch misconfiguration early |
 
 ### CI/CD
 
-- GitHub Actions workflow: `pnpm install → lint → typecheck → test → cdk synth`
-- Docker image build + ECR push on merge to `main`
+- GitHub Actions: `pnpm install → lint → typecheck → test → cdk synth`
 - Amplify auto-deploys `web` package on merge to `main`
 
 ---
 
 ## Milestone Summary
 
-| Sprint | Deliverable | Key Output |
+| Phase | Deliverable | Key Output |
 |---|---|---|
-| 1 — Ingestion | URL submission + DynamoDB write + SFN trigger | Working `/api/jobs` POST endpoint |
-| 2 — Infrastructure | Full CDK stack deployed | All AWS resources live, Amplify hosted |
-| 3 — AI Brain | Bedrock analysis + critique pipeline | Valid `CVOutput` written to DynamoDB |
-| 4 — Control Plane | Next.js polling UI | End-to-end user flow complete |
+| **Phase 1 — MVP** | Manual resume + JD → tailored CV via Step Functions | Working end-to-end tailoring pipeline |
+| Phase 2 — Automation | SerpApi job discovery + Playwright scraper on Lambda | Fully automated pipeline for AU job boards |
