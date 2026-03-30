@@ -19,8 +19,9 @@
 | Orchestration | Next.js API Route → AWS Step Functions (Express Workflow) |
 | AI — Draft | Amazon Bedrock — Claude 3.7 Sonnet (tailored CV drafting) |
 | AI — Critique | Amazon Bedrock — Claude 3 Haiku (quality critique & scoring) |
-| File Storage | Amazon S3 (tailored CV Markdown output) |
+| File Storage | Amazon S3 (tailored CV Markdown output + raw resume/JD payloads) |
 | Metadata / Status | Amazon DynamoDB (job record + polling status) |
+| Observability | AWS Lambda Powertools for TypeScript — structured logging, X-Ray tracing, custom metrics |
 | Package Manager | pnpm workspaces |
 
 ---
@@ -48,7 +49,10 @@ Replace the manual job description input with an automated pipeline:
 ├── packages/
 │   ├── infra/                        # AWS CDK stack (all Phase 1 resources)
 │   │   ├── lib/
-│   │   │   └── promptly-employed-stack.ts
+│   │   │   ├── promptly-employed-stack.ts
+│   │   │   └── constructs/
+│   │   │       ├── storage-construct.ts      # S3 bucket + DynamoDB table
+│   │   │       └── ai-pipeline-construct.ts  # Lambdas + Step Function + IAM
 │   │   ├── lambda/
 │   │   │   ├── draft-cv/             # DraftCVLambda — Claude 3.7 Sonnet
 │   │   │   │   └── index.ts
@@ -65,9 +69,11 @@ Replace the manual job description input with an automated pipeline:
 │   │   │       │       └── page.tsx  # Status polling + result display
 │   │   │       └── api/
 │   │   │           └── jobs/
-│   │   │               ├── route.ts          # POST — submit job
+│   │   │               ├── route.ts          # POST — submit job, upload inputs to S3
 │   │   │               └── [jobId]/
-│   │   │                   └── route.ts      # GET — poll status
+│   │   │                   ├── route.ts      # GET — poll status
+│   │   │                   └── stream/
+│   │   │                       └── route.ts  # GET — SSE status stream
 │   │   └── package.json
 │   └── shared/                       # Zod schemas, types, prompt builders
 │       ├── src/
@@ -95,10 +101,12 @@ import { z } from "zod";
 export const JobSubmissionSchema = z.object({
   masterResume: z
     .string()
-    .min(200, "Master resume must be at least 200 characters"),
+    .min(200, "Master resume must be at least 200 characters")
+    .max(15000, "Master resume must not exceed 15 000 characters (~4 000 tokens)"),
   jobDescription: z
     .string()
-    .min(50, "Job description must be at least 50 characters"),
+    .min(50, "Job description must be at least 50 characters")
+    .max(15000, "Job description must not exceed 15 000 characters (~4 000 tokens)"),
 });
 
 export type JobSubmission = z.infer<typeof JobSubmissionSchema>;
@@ -129,10 +137,12 @@ export type JobRecord = z.infer<typeof JobRecordSchema>;
 
 // ── Step Function input/output ─────────────────────────────────────────────
 
+// Raw text is written to S3 on submission; only S3 keys flow through the state
+// machine to stay within the 256 KB Express Workflow payload limit.
 export const StepFunctionInputSchema = z.object({
   jobId: z.string().uuid(),
-  masterResume: z.string(),
-  jobDescription: z.string(),
+  s3ResumeKey: z.string(),    // S3 key for the uploaded master resume
+  s3JobDescKey: z.string(),   // S3 key for the uploaded job description
 });
 
 export type StepFunctionInput = z.infer<typeof StepFunctionInputSchema>;
@@ -156,7 +166,14 @@ export type TailoredCVOutput = z.infer<typeof TailoredCVOutputSchema>;
 
 ## AWS CDK Resources (Phase 1)
 
-All resources are defined in a single `PromptlyEmployedStack` in `packages/infra/lib/promptly-employed-stack.ts`.
+Resources are decomposed into focused L3 constructs under `packages/infra/lib/constructs/`, composed by `PromptlyEmployedStack`.
+
+| Construct | File | Responsibility |
+|---|---|---|
+| `StorageConstruct` | `constructs/storage-construct.ts` | S3 bucket + DynamoDB table |
+| `AIPipelineConstruct` | `constructs/ai-pipeline-construct.ts` | Both Lambdas + Step Function + IAM |
+
+Each construct accepts explicit props for any ARNs or names it depends on — no implicit cross-construct coupling.
 
 ### 1 — S3 Bucket: `PromptlyEmployedResults`
 
@@ -187,10 +204,12 @@ All resources are defined in a single `PromptlyEmployedStack` in `packages/infra
 | Handler | `packages/infra/lambda/draft-cv/index.handler` |
 | Memory | 512 MB |
 | Timeout | 5 minutes |
-| Input | `{ jobId, masterResume, jobDescription }` |
+| Input | `{ jobId, s3ResumeKey, s3JobDescKey }` — raw text fetched from S3 inside the handler |
 | Output | `{ jobId, tailoredMarkdown }` |
-| Bedrock model | `anthropic.claude-3-7-sonnet-20250219-v1:0` |
-| IAM grants | DynamoDB `PutItem` / `UpdateItem`, Bedrock `InvokeModel`, S3 `PutObject` |
+| Bedrock model | Supplied via `BEDROCK_MODEL_ID` env var (set by CDK); default `anthropic.claude-3-7-sonnet-20250219-v1:0` |
+| Environment vars | `BEDROCK_MODEL_ID`, `JOBS_TABLE_NAME`, `RESULTS_BUCKET_NAME` |
+| Observability | Lambda Powertools — `Logger` (structured JSON + `jobId` correlation ID), `Tracer` (X-Ray subsegments around Bedrock + S3 calls) |
+| IAM grants | DynamoDB `PutItem` / `UpdateItem`, Bedrock `InvokeModel`, S3 `GetObject` (resume/JD keys) + `PutObject` (result key) |
 | Status transition | Sets DynamoDB record to `DRAFTING` on start |
 
 ### 4 — Lambda: `CritiqueCVLambda`
@@ -202,10 +221,12 @@ All resources are defined in a single `PromptlyEmployedStack` in `packages/infra
 | Handler | `packages/infra/lambda/critique-cv/index.handler` |
 | Memory | 256 MB |
 | Timeout | 3 minutes |
-| Input | `{ jobId, tailoredMarkdown, jobDescription }` |
+| Input | `{ jobId, tailoredMarkdown, s3JobDescKey }` — JD text fetched from S3 inside the handler |
 | Output | `{ jobId, critiqueNotes, fitScore, fitRationale, suggestedImprovements }` |
-| Bedrock model | `anthropic.claude-3-haiku-20240307-v1:0` |
-| IAM grants | DynamoDB `UpdateItem`, Bedrock `InvokeModel`, S3 `PutObject` |
+| Bedrock model | Supplied via `BEDROCK_MODEL_ID` env var (set by CDK); default `anthropic.claude-3-haiku-20240307-v1:0` |
+| Environment vars | `BEDROCK_MODEL_ID`, `JOBS_TABLE_NAME`, `RESULTS_BUCKET_NAME` |
+| Observability | Lambda Powertools — `Logger` (structured JSON + `jobId` correlation ID), `Tracer` (X-Ray subsegment around Bedrock call) |
+| IAM grants | DynamoDB `UpdateItem`, Bedrock `InvokeModel`, S3 `GetObject` (JD key) + `PutObject` (result key) |
 | Status transition | Sets DynamoDB record to `CRITIQUE` on start, `COMPLETE` on success |
 
 ### 5 — Step Functions Express Workflow: `TailorCVWorkflow`
@@ -235,8 +256,9 @@ StartExecution (called from POST /api/jobs)
 |---|---|
 | Type | Express Workflow (synchronous-style, async invocation from API) |
 | Execution timeout | 10 minutes |
-| Error handling | `Catch` on all states → `HandleFailure` task (Lambda or direct DynamoDB SDK integration) |
-| IAM | Step Functions execution role with `lambda:InvokeFunction` on both Lambda ARNs |
+| Retry policy | `ThrottlingException` / `ServiceUnavailableException` on each Lambda task — 3 attempts, 2 s initial interval, backoff ×2.0 |
+| Error handling | `Catch` on all states → `HandleFailure` — direct DynamoDB SDK integration (no Lambda; eliminates cold start and extra IAM surface) |
+| IAM | Step Functions execution role with `lambda:InvokeFunction` on both Lambda ARNs + `dynamodb:UpdateItem` on the jobs table |
 
 ---
 
@@ -247,28 +269,36 @@ The Phase 1 MVP is complete when **all** of the following are true:
 ### Functional
 
 - [ ] A user can paste a master resume (plain text) and a job description (plain text) into the web UI and submit the form
-- [ ] Submitting creates a `JobRecord` in DynamoDB with `status: "PENDING"` and triggers a Step Functions execution
-- [ ] `DraftCVLambda` produces a complete tailored CV in Markdown and writes it to S3
+- [ ] Submitting writes resume and JD text to S3, creates a `JobRecord` in DynamoDB with `status: "PENDING"`, and triggers a Step Functions execution with S3 keys (not raw text)
+- [ ] `DraftCVLambda` fetches resume/JD from S3, produces a complete tailored CV in Markdown, and writes it back to S3
 - [ ] `CritiqueCVLambda` produces `critiqueNotes`, a `fitScore` (0–100), `fitRationale`, and `suggestedImprovements`
 - [ ] The final Markdown result is written to S3 at `results/{jobId}/tailored-cv.md`
 - [ ] DynamoDB record status progresses: `PENDING → DRAFTING → CRITIQUE → COMPLETE`
-- [ ] The UI polls `/api/jobs/[jobId]` and visually reflects each status transition
+- [ ] The UI streams status updates via Server-Sent Events (`GET /api/jobs/[jobId]/stream`) and visually reflects each transition without polling
 - [ ] On `COMPLETE`, the UI renders the tailored CV Markdown, fit score, and critique notes
 - [ ] On `FAILED`, the UI shows a clear error message and allows resubmission
 
 ### Infrastructure
 
 - [ ] `pnpm --filter infra cdk deploy` completes without errors in a clean AWS account
+- [ ] CDK stack is decomposed into `StorageConstruct` and `AIPipelineConstruct`; constructs communicate via explicit props (no implicit coupling)
 - [ ] All IAM roles follow least-privilege (no wildcard actions or resources)
 - [ ] S3 bucket has public access fully blocked
 - [ ] DynamoDB TTL is configured and verified active
+- [ ] Step Functions state machine has `Retry` blocks on both Lambda tasks for `ThrottlingException` and `ServiceUnavailableException`
+- [ ] `HandleFailure` uses a direct DynamoDB SDK integration (not a Lambda) to set `status: "FAILED"`
+- [ ] Bedrock model IDs are passed to Lambdas as CDK-managed environment variables — not hardcoded in Lambda source
 
 ### Quality
 
 - [ ] Zod schemas validate all inbound API payloads; invalid submissions return `400` with a descriptive error
+- [ ] `masterResume` and `jobDescription` inputs are rejected above 15 000 characters
+- [ ] All Bedrock prompts wrap user-supplied text in XML delimiter tags (`<resume>`, `<job_description>`) — documented in `prompts.ts`
 - [ ] Malformed or incomplete Bedrock responses do not crash the state machine — they set `status: "FAILED"` with a stored error message
 - [ ] Unit tests pass for all Zod schemas, prompt builders, and Lambda handler logic (mocked AWS SDK)
 - [ ] `fitScore` is always a whole number in the range 0–100
+- [ ] All Lambda handlers emit structured JSON logs via Lambda Powertools `Logger` with `jobId` on every line
+- [ ] X-Ray trace spans are present for Bedrock and S3 calls within each Lambda
 
 ### Out of Scope for Phase 1
 
@@ -286,19 +316,27 @@ The Phase 1 MVP is complete when **all** of the following are true:
 
 - All Lambda execution roles are least-privilege — scoped to specific table/bucket ARNs, not `*`
 - `jobId` is UUID v4 — not guessable; status polling does not expose other users' data
-- Master resume and job description text are passed through Step Functions input only; never logged or stored beyond the DynamoDB record TTL
+- Master resume and job description text are written to S3 with presigned access; only S3 keys flow through Step Functions input — raw text is never logged
 - S3 bucket policy denies all public `GetObject`; only Lambda role may read/write
 - API route validates and sanitises payload via Zod before passing to AWS SDK calls
+- **Prompt injection mitigation:** user-supplied text is wrapped in XML delimiter tags (`<resume>…</resume>`, `<job_description>…</job_description>`) in all Bedrock prompts — Anthropic's recommended pattern for separating instructions from untrusted content; this design decision is documented in `prompts.ts`
+- Zod schemas enforce `.max(15000)` on both inputs (~4 000 tokens) to bound Bedrock cost and reduce prompt-stuffing surface area
 
 ### Testing Strategy
 
 | Layer | Approach |
 |---|---|
-| Zod schemas | Vitest unit tests — valid and invalid fixture inputs |
-| Prompt builders | Vitest unit tests — assert structure and required sections present |
-| Lambda handlers | Vitest + mocked `@aws-sdk` clients (`vi.mock`) |
+| Zod schemas | Vitest unit tests — valid and invalid fixture inputs, including boundary values for min/max |
+| Prompt builders | Vitest unit tests — assert XML delimiter tags present and required sections populated |
+| Lambda handlers | Vitest + mocked `@aws-sdk` clients (`vi.mock`) + mocked Lambda Powertools |
 | Next.js API routes | Vitest + `next-test-api-route-handler` |
 | CDK stack | `cdk synth` in CI to catch misconfiguration early |
+
+### Observability
+
+- **Structured logging** — Lambda Powertools `Logger` on every handler; `jobId` injected as a persistent correlation key so all log lines from a single execution are trivially filterable in CloudWatch Logs Insights
+- **Distributed tracing** — Lambda Powertools `Tracer` wraps Bedrock `InvokeModel` and S3 calls in X-Ray subsegments; the full Step Functions → Lambda → Bedrock call chain is visible in the X-Ray service map
+- **Custom metrics** — Lambda Powertools `Metrics` emits EMF metrics for `BedrockLatencyMs` and `FitScore` per invocation; queryable in CloudWatch without log parsing
 
 ### CI/CD
 
