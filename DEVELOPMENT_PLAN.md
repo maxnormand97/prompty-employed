@@ -1,6 +1,6 @@
 # DEVELOPMENT_PLAN.md — Promptly Employed
 
-> AI-powered CV tailoring engine. The user pastes their master resume and a target job description; an AWS Step Functions workflow drafts a tailored CV via Claude 3.7 Sonnet, then runs it through a Claude 3 Haiku quality critique. Results are stored in S3 (Markdown) and DynamoDB (metadata/status).
+> AI-powered job application engine. The user pastes their master experience list / resume and a target job description; an AWS Step Functions workflow uses Claude 3.7 Sonnet to produce a **tailored CV** and a **tailored cover letter**, then runs both through a Claude 3 Haiku analysis that scores CV quality, estimates the **likelihood of landing the role**, and produces a **gap analysis** with practical advice for each shortfall. All artefacts are stored in S3 (Markdown) and DynamoDB (metadata/status).
 
 ---
 
@@ -17,8 +17,8 @@
 |---|---|
 | Frontend / Hosting | Next.js 15 (App Router) on AWS Amplify Hosting |
 | Orchestration | Next.js API Route → AWS Step Functions (Express Workflow) |
-| AI — Draft | Amazon Bedrock — Claude 3.7 Sonnet (tailored CV drafting) |
-| AI — Critique | Amazon Bedrock — Claude 3 Haiku (quality critique & scoring) |
+| AI — Draft | Amazon Bedrock — Claude 3.7 Sonnet (tailored CV + cover letter drafting) |
+| AI — Analyse | Amazon Bedrock — Claude 3 Haiku (CV quality score, likelihood score, gap analysis) |
 | File Storage | Amazon S3 (tailored CV Markdown output + raw resume/JD payloads) |
 | Metadata / Status | Amazon DynamoDB (job record + polling status) |
 | Observability | AWS Lambda Powertools for TypeScript — structured logging, X-Ray tracing, custom metrics |
@@ -147,19 +147,37 @@ export const StepFunctionInputSchema = z.object({
 
 export type StepFunctionInput = z.infer<typeof StepFunctionInputSchema>;
 
-// ── AI output ─────────────────────────────────────────────────────────────
+// ── Gap analysis ──────────────────────────────────────────────────────────
 
-export const TailoredCVOutputSchema = z.object({
-  jobId: z.string().uuid(),
-  completedAt: z.string().datetime(),
-  tailoredMarkdown: z.string().min(1),  // full CV draft from Claude 3.7 Sonnet
-  critiqueNotes: z.string().min(1),     // qualitative feedback from Claude 3 Haiku
-  fitScore: z.number().int().min(0).max(100), // 0–100 score from Claude 3 Haiku
-  fitRationale: z.string(),             // one-paragraph scoring explanation
-  suggestedImprovements: z.array(z.string()), // actionable bullet points
+export const GapAdviceSchema = z.object({
+  gap: z.string(),                          // e.g. "No hands-on Kubernetes experience"
+  advice: z.string(),                       // e.g. "Complete the free CKAD course on..."
+  priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
 });
 
-export type TailoredCVOutput = z.infer<typeof TailoredCVOutputSchema>;
+export type GapAdvice = z.infer<typeof GapAdviceSchema>;
+
+// ── AI output ─────────────────────────────────────────────────────────────
+
+export const TailoredOutputSchema = z.object({
+  jobId: z.string().uuid(),
+  completedAt: z.string().datetime(),
+
+  // ── Draft artefacts (from Claude 3.7 Sonnet) ──────────────────────────
+  tailoredCV: z.string().min(1),            // full CV rewritten to match the JD
+  coverLetter: z.string().min(1),           // tailored cover letter for the role
+
+  // ── Analysis (from Claude 3 Haiku) ────────────────────────────────────
+  critiqueNotes: z.string().min(1),         // qualitative feedback on the tailored CV
+  fitScore: z.number().int().min(0).max(100),      // 0–100 CV quality / fit score
+  fitRationale: z.string(),                 // one-paragraph CV quality explanation
+  likelihoodScore: z.number().int().min(0).max(100), // 0–100 probability of landing the role
+  likelihoodRationale: z.string(),          // one-paragraph likelihood explanation
+  suggestedImprovements: z.array(z.string()), // quick wins for the CV/cover letter
+  gapAnalysis: z.array(GapAdviceSchema),    // experience gaps + prioritised practical advice
+});
+
+export type TailoredOutput = z.infer<typeof TailoredOutputSchema>;
 ```
 
 ---
@@ -179,8 +197,10 @@ Each construct accepts explicit props for any ARNs or names it depends on — no
 
 | Property | Value |
 |---|---|
-| Purpose | Store tailored CV drafts as Markdown files |
-| Key pattern | `results/{jobId}/tailored-cv.md` |
+| Purpose | Store all AI-generated artefacts and raw input payloads |
+| Key pattern | `inputs/{jobId}/resume.txt`, `inputs/{jobId}/job-description.txt` |
+| | `results/{jobId}/tailored-cv.md` |
+| | `results/{jobId}/cover-letter.md` |
 | Versioning | Disabled (Phase 1) |
 | Public access | Blocked — all access via Lambda role only |
 | Lifecycle rule | Expire objects after 90 days |
@@ -199,34 +219,34 @@ Each construct accepts explicit props for any ARNs or names it depends on — no
 
 | Property | Value |
 |---|---|
-| Purpose | Node 1 of the Step Function — calls Claude 3.7 Sonnet to draft the tailored CV |
+| Purpose | Node 1 of the Step Function — calls Claude 3.7 Sonnet to draft both the tailored CV and the cover letter in a single structured prompt |
 | Runtime | Node.js 22.x |
 | Handler | `packages/infra/lambda/draft-cv/index.handler` |
 | Memory | 512 MB |
 | Timeout | 5 minutes |
 | Input | `{ jobId, s3ResumeKey, s3JobDescKey }` — raw text fetched from S3 inside the handler |
-| Output | `{ jobId, tailoredMarkdown }` |
+| Output | `{ jobId, tailoredCV, coverLetter }` — both written to S3; keys passed downstream |
 | Bedrock model | Supplied via `BEDROCK_MODEL_ID` env var (set by CDK); default `anthropic.claude-3-7-sonnet-20250219-v1:0` |
 | Environment vars | `BEDROCK_MODEL_ID`, `JOBS_TABLE_NAME`, `RESULTS_BUCKET_NAME` |
 | Observability | Lambda Powertools — `Logger` (structured JSON + `jobId` correlation ID), `Tracer` (X-Ray subsegments around Bedrock + S3 calls) |
-| IAM grants | DynamoDB `PutItem` / `UpdateItem`, Bedrock `InvokeModel`, S3 `GetObject` (resume/JD keys) + `PutObject` (result key) |
+| IAM grants | DynamoDB `PutItem` / `UpdateItem`, Bedrock `InvokeModel`, S3 `GetObject` (resume/JD keys) + `PutObject` (CV + cover letter keys) |
 | Status transition | Sets DynamoDB record to `DRAFTING` on start |
 
 ### 4 — Lambda: `CritiqueCVLambda`
 
 | Property | Value |
 |---|---|
-| Purpose | Node 2 of the Step Function — calls Claude 3 Haiku to critique and score the draft |
+| Purpose | Node 2 of the Step Function — calls Claude 3 Haiku to analyse the tailored CV against the JD; produces CV quality score, likelihood-of-hire score, gap analysis, and critique notes |
 | Runtime | Node.js 22.x |
 | Handler | `packages/infra/lambda/critique-cv/index.handler` |
 | Memory | 256 MB |
 | Timeout | 3 minutes |
-| Input | `{ jobId, tailoredMarkdown, s3JobDescKey }` — JD text fetched from S3 inside the handler |
-| Output | `{ jobId, critiqueNotes, fitScore, fitRationale, suggestedImprovements }` |
+| Input | `{ jobId, s3TailoredCVKey, s3CoverLetterKey, s3JobDescKey }` — artefacts fetched from S3 inside the handler |
+| Output | `{ jobId, critiqueNotes, fitScore, fitRationale, likelihoodScore, likelihoodRationale, suggestedImprovements, gapAnalysis }` |
 | Bedrock model | Supplied via `BEDROCK_MODEL_ID` env var (set by CDK); default `anthropic.claude-3-haiku-20240307-v1:0` |
 | Environment vars | `BEDROCK_MODEL_ID`, `JOBS_TABLE_NAME`, `RESULTS_BUCKET_NAME` |
 | Observability | Lambda Powertools — `Logger` (structured JSON + `jobId` correlation ID), `Tracer` (X-Ray subsegment around Bedrock call) |
-| IAM grants | DynamoDB `UpdateItem`, Bedrock `InvokeModel`, S3 `GetObject` (JD key) + `PutObject` (result key) |
+| IAM grants | DynamoDB `UpdateItem`, Bedrock `InvokeModel`, S3 `GetObject` (CV + cover letter + JD keys) + `PutObject` (analysis results) |
 | Status transition | Sets DynamoDB record to `CRITIQUE` on start, `COMPLETE` on success |
 
 ### 5 — Step Functions Express Workflow: `TailorCVWorkflow`
@@ -270,12 +290,12 @@ The Phase 1 MVP is complete when **all** of the following are true:
 
 - [ ] A user can paste a master resume (plain text) and a job description (plain text) into the web UI and submit the form
 - [ ] Submitting writes resume and JD text to S3, creates a `JobRecord` in DynamoDB with `status: "PENDING"`, and triggers a Step Functions execution with S3 keys (not raw text)
-- [ ] `DraftCVLambda` fetches resume/JD from S3, produces a complete tailored CV in Markdown, and writes it back to S3
-- [ ] `CritiqueCVLambda` produces `critiqueNotes`, a `fitScore` (0–100), `fitRationale`, and `suggestedImprovements`
-- [ ] The final Markdown result is written to S3 at `results/{jobId}/tailored-cv.md`
+- [ ] `DraftCVLambda` fetches resume/JD from S3, produces a tailored CV **and** a tailored cover letter in Markdown, and writes both to S3
+- [ ] `CritiqueCVLambda` produces `critiqueNotes`, `fitScore` (0–100), `fitRationale`, `likelihoodScore` (0–100), `likelihoodRationale`, `suggestedImprovements`, and `gapAnalysis`
+- [ ] Tailored CV is written to S3 at `results/{jobId}/tailored-cv.md`; cover letter at `results/{jobId}/cover-letter.md`
 - [ ] DynamoDB record status progresses: `PENDING → DRAFTING → CRITIQUE → COMPLETE`
 - [ ] The UI streams status updates via Server-Sent Events (`GET /api/jobs/[jobId]/stream`) and visually reflects each transition without polling
-- [ ] On `COMPLETE`, the UI renders the tailored CV Markdown, fit score, and critique notes
+- [ ] On `COMPLETE`, the UI renders: tailored CV, cover letter, fit score + rationale, likelihood score + rationale, gap analysis (each gap with priority badge and practical advice), and suggested improvements
 - [ ] On `FAILED`, the UI shows a clear error message and allows resubmission
 
 ### Infrastructure
@@ -296,7 +316,8 @@ The Phase 1 MVP is complete when **all** of the following are true:
 - [ ] All Bedrock prompts wrap user-supplied text in XML delimiter tags (`<resume>`, `<job_description>`) — documented in `prompts.ts`
 - [ ] Malformed or incomplete Bedrock responses do not crash the state machine — they set `status: "FAILED"` with a stored error message
 - [ ] Unit tests pass for all Zod schemas, prompt builders, and Lambda handler logic (mocked AWS SDK)
-- [ ] `fitScore` is always a whole number in the range 0–100
+- [ ] `fitScore` and `likelihoodScore` are always whole numbers in the range 0–100
+- [ ] `gapAnalysis` items each have a `priority` of `HIGH`, `MEDIUM`, or `LOW` and non-empty `gap` and `advice` strings
 - [ ] All Lambda handlers emit structured JSON logs via Lambda Powertools `Logger` with `jobId` on every line
 - [ ] X-Ray trace spans are present for Bedrock and S3 calls within each Lambda
 
@@ -336,7 +357,7 @@ The Phase 1 MVP is complete when **all** of the following are true:
 
 - **Structured logging** — Lambda Powertools `Logger` on every handler; `jobId` injected as a persistent correlation key so all log lines from a single execution are trivially filterable in CloudWatch Logs Insights
 - **Distributed tracing** — Lambda Powertools `Tracer` wraps Bedrock `InvokeModel` and S3 calls in X-Ray subsegments; the full Step Functions → Lambda → Bedrock call chain is visible in the X-Ray service map
-- **Custom metrics** — Lambda Powertools `Metrics` emits EMF metrics for `BedrockLatencyMs` and `FitScore` per invocation; queryable in CloudWatch without log parsing
+- **Custom metrics** — Lambda Powertools `Metrics` emits EMF metrics for `BedrockLatencyMs`, `FitScore`, and `LikelihoodScore` per invocation; queryable in CloudWatch without log parsing
 
 ### CI/CD
 
@@ -349,5 +370,5 @@ The Phase 1 MVP is complete when **all** of the following are true:
 
 | Phase | Deliverable | Key Output |
 |---|---|---|
-| **Phase 1 — MVP** | Manual resume + JD → tailored CV via Step Functions | Working end-to-end tailoring pipeline |
+| **Phase 1 — MVP** | Manual resume + JD → tailored CV, cover letter, likelihood score, gap analysis | Working end-to-end application pipeline |
 | Phase 2 — Automation | SerpApi job discovery + Playwright scraper on Lambda | Fully automated pipeline for AU job boards |
