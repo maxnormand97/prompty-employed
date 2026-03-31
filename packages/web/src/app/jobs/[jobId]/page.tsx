@@ -76,7 +76,11 @@ function ScoreRing({
   const strokeColor = color === "violet" ? "#7c3aed" : "#10b981";
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div
+      className="flex flex-col items-center gap-1"
+      role="img"
+      aria-label={`${label}: ${score} out of 100`}
+    >
       <div className="relative h-28 w-28">
         <svg className="h-28 w-28 -rotate-90" viewBox="0 0 100 100" aria-hidden>
           {/* Track */}
@@ -107,7 +111,7 @@ function ScoreRing({
           <span className="text-2xl font-bold tabular-nums">{score}</span>
         </div>
       </div>
-      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+      <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
         {label}
       </span>
     </div>
@@ -138,9 +142,9 @@ function PriorityBadge({ priority }: { priority: GapAdvice["priority"] }) {
   const config = PRIORITY_CONFIG[priority];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${config.className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-sm font-semibold ${config.className}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${config.dot}`} aria-hidden />
+      <span className={`h-2 w-2 rounded-full ${config.dot}`} aria-hidden />
       {config.label}
     </span>
   );
@@ -227,13 +231,18 @@ export default function JobPage() {
       <div className="space-y-1">
         <button
           onClick={() => router.push("/")}
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 mb-6"
+          className="text-base text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 mb-6 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           ← New application
         </button>
         <h1 className="text-2xl font-bold tracking-tight">
           {isFailed ? "Something went wrong" : "Tailoring your application…"}
         </h1>
+        <p className="sr-only" aria-live="polite" aria-atomic="true">
+          {isFailed
+            ? `Error: ${errorMessage}`
+            : `Current step: ${STEPS[Math.max(0, currentIndex)]?.label ?? status}`}
+        </p>
         <p className="text-sm text-muted-foreground font-mono">
           Job ID: {jobId}
         </p>
@@ -318,7 +327,7 @@ export default function JobPage() {
                     {/* Text */}
                     <div className="min-w-0 flex-1">
                       <p
-                        className={`text-sm font-medium ${
+                        className={`text-base font-medium ${
                           isDone
                             ? "text-emerald-400"
                             : isActive
@@ -329,7 +338,7 @@ export default function JobPage() {
                         {step.label}
                       </p>
                       {isActive && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        <p className="text-sm text-muted-foreground mt-0.5">
                           {step.description}
                         </p>
                       )}
@@ -338,7 +347,7 @@ export default function JobPage() {
                     {isActive && (
                       <Badge
                         variant="outline"
-                        className="shrink-0 border-violet-500/40 text-violet-400 text-xs"
+                        className="shrink-0 border-violet-500/40 text-violet-400 text-sm"
                       >
                         {isPending ? "Waiting" : "Running"}
                       </Badge>
@@ -355,8 +364,8 @@ export default function JobPage() {
       {result && (
         <div ref={resultsRef} className="space-y-8">
           <div>
-            <h2 className="text-xl font-bold tracking-tight">Your Results</h2>
-            <p className="text-sm text-muted-foreground mt-1">
+            <h2 className="text-2xl font-bold tracking-tight">Your Results</h2>
+            <p className="text-base text-muted-foreground mt-1">
               All four artefacts generated in one run · {new Date(result.completedAt).toLocaleTimeString()}
             </p>
           </div>
@@ -372,16 +381,17 @@ export default function JobPage() {
               </div>
               <Button
                 variant="outline"
-                size="sm"
+                size="default"
                 onClick={() => downloadMarkdown(result.tailoredCV, "tailored-cv.md")}
                 className="shrink-0"
+                aria-label="Download tailored CV as Markdown"
               >
                 Download .md
               </Button>
             </CardHeader>
             <Separator />
             <CardContent className="pt-6">
-              <div className="prose prose-sm prose-invert max-w-none">
+              <div className="prose prose-invert max-w-none">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {result.tailoredCV}
                 </ReactMarkdown>
@@ -400,16 +410,17 @@ export default function JobPage() {
               </div>
               <Button
                 variant="outline"
-                size="sm"
+                size="default"
                 onClick={() => downloadMarkdown(result.coverLetter, "cover-letter.md")}
                 className="shrink-0"
+                aria-label="Download cover letter as Markdown"
               >
                 Download .md
               </Button>
             </CardHeader>
             <Separator />
             <CardContent className="pt-6">
-              <div className="prose prose-sm prose-invert max-w-none">
+              <div className="prose prose-invert max-w-none">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {result.coverLetter}
                 </ReactMarkdown>
@@ -436,7 +447,7 @@ export default function JobPage() {
                     label="CV Fit Score"
                     color="violet"
                   />
-                  <p className="text-center text-sm text-muted-foreground">
+                  <p className="text-center text-base text-muted-foreground">
                     {result.fitRationale}
                   </p>
                 </div>
@@ -446,7 +457,7 @@ export default function JobPage() {
                     label="Likelihood of Hire"
                     color="emerald"
                   />
-                  <p className="text-center text-sm text-muted-foreground">
+                  <p className="text-center text-base text-muted-foreground">
                     {result.likelihoodRationale}
                   </p>
                 </div>
@@ -454,8 +465,8 @@ export default function JobPage() {
 
               {/* Critique notes */}
               {result.critiqueNotes && (
-                <div className="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground border border-border/40">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-foreground/60 mb-2">
+                <div className="rounded-lg bg-muted/40 p-4 text-base text-muted-foreground border border-border/40">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-foreground/60 mb-2">
                     CV Critique
                   </p>
                   {result.critiqueNotes}
@@ -465,10 +476,10 @@ export default function JobPage() {
               {/* Suggested improvements */}
               {result.suggestedImprovements.length > 0 && (
                 <div>
-                  <p className="text-sm font-semibold mb-3">Quick Wins</p>
+                  <p className="text-base font-semibold mb-3">Quick Wins</p>
                   <ul className="space-y-2">
                     {result.suggestedImprovements.map((tip, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                      <li key={i} className="flex items-start gap-2 text-base text-muted-foreground">
                         <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" aria-hidden />
                         {tip}
                       </li>
@@ -492,7 +503,7 @@ export default function JobPage() {
             <Separator />
             <CardContent className="pt-6">
               {result.gapAnalysis.length === 0 ? (
-                <p className="text-sm text-emerald-400 font-medium">
+                <p className="text-base text-emerald-400 font-medium">
                   ✓ Your background is a strong match. No critical gaps identified.
                 </p>
               ) : (
@@ -501,9 +512,9 @@ export default function JobPage() {
                     <li key={i} className="space-y-2">
                       <div className="flex items-start gap-3">
                         <PriorityBadge priority={gap.priority} />
-                        <p className="text-sm font-semibold leading-snug">{gap.gap}</p>
+                        <p className="text-base font-semibold leading-snug">{gap.gap}</p>
                       </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed pl-0">
+                      <p className="text-base text-muted-foreground leading-relaxed pl-0">
                         {gap.advice}
                       </p>
                       {i < result.gapAnalysis.length - 1 && (
@@ -520,6 +531,7 @@ export default function JobPage() {
           <div className="text-center pb-8">
             <Button
               onClick={() => router.push("/")}
+              size="lg"
               className="bg-violet-600 hover:bg-violet-500 text-white"
             >
               Tailor Another Application →

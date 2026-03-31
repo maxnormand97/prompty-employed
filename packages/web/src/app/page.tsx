@@ -121,7 +121,7 @@ export default function HomePage() {
                 Your Master Resume / Experience List
               </label>
               <span
-                className={`text-xs tabular-nums ${
+                className={`text-sm tabular-nums ${
                   resumeCount > RESUME_MAX
                     ? "text-destructive"
                     : resumeCount >= RESUME_MIN
@@ -143,13 +143,13 @@ export default function HomePage() {
                   setErrors((p) => ({ ...p, masterResume: undefined }));
               }}
               rows={10}
-              className="resize-y font-mono text-sm leading-relaxed"
+              className="resize-y font-mono text-base leading-relaxed"
               aria-describedby={errors.masterResume ? "resume-error" : undefined}
               aria-invalid={!!errors.masterResume}
               disabled={submitting}
             />
             {errors.masterResume && (
-              <p id="resume-error" className="text-sm text-destructive" role="alert">
+              <p id="resume-error" className="text-base text-destructive" role="alert">
                 {errors.masterResume}
               </p>
             )}
@@ -165,7 +165,7 @@ export default function HomePage() {
                 Job Description
               </label>
               <span
-                className={`text-xs tabular-nums ${
+                className={`text-sm tabular-nums ${
                   jdCount > JD_MAX
                     ? "text-destructive"
                     : jdCount >= JD_MIN
@@ -187,13 +187,13 @@ export default function HomePage() {
                   setErrors((p) => ({ ...p, jobDescription: undefined }));
               }}
               rows={8}
-              className="resize-y font-mono text-sm leading-relaxed"
+              className="resize-y font-mono text-base leading-relaxed"
               aria-describedby={errors.jobDescription ? "jd-error" : undefined}
               aria-invalid={!!errors.jobDescription}
               disabled={submitting}
             />
             {errors.jobDescription && (
-              <p id="jd-error" className="text-sm text-destructive" role="alert">
+              <p id="jd-error" className="text-base text-destructive" role="alert">
                 {errors.jobDescription}
               </p>
             )}
@@ -242,7 +242,7 @@ export default function HomePage() {
             )}
           </Button>
 
-          <p className="text-center text-xs text-muted-foreground">
+          <p className="text-center text-sm text-muted-foreground">
             Your data is processed securely and deleted after 30 days. No account required.
           </p>
         </form>
