@@ -25,8 +25,7 @@ jobs:
       # pnpm must be set up before setup-node so the cache key is correct.
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # Version is read automatically from packageManager in package.json
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -40,11 +39,15 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Typecheck
-        run: pnpm typecheck
-
+      # Build runs before typecheck because next build regenerates
+      # packages/web/next-env.d.ts (which is gitignored). Without it on a
+      # fresh checkout, tsc --noEmit would run against incomplete type
+      # declarations and may produce spurious errors.
       - name: Build
         run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Test
         run: pnpm test
