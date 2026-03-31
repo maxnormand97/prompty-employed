@@ -372,3 +372,18 @@ The Phase 1 MVP is complete when **all** of the following are true:
 |---|---|---|
 | **Phase 1 — MVP** | Manual resume + JD → tailored CV, cover letter, likelihood score, gap analysis | Working end-to-end application pipeline |
 | Phase 2 — Automation | SerpApi job discovery + Playwright scraper on Lambda | Fully automated pipeline for AU job boards |
+
+---
+
+## API Security (Prototype Phase)
+
+For the prototype, the job submission API (POST `/api/jobs`) is **restricted to the project owner only** to prevent abuse and spamming of the AWS pipeline:
+
+- When the `INTERNAL_API_KEY` environment variable is set, all POST requests must include a secret header (e.g. `x-internal-api-key`) whose value matches `INTERNAL_API_KEY`.
+- The secret is never exposed in frontend code or public repos.
+- When `INTERNAL_API_KEY` is set, any POST without the correct header receives a 403 Forbidden response. If `INTERNAL_API_KEY` is not set (e.g. in local development), the POST route is effectively open.
+- In non-development environments (`NODE_ENV !== "development"`), `INTERNAL_API_KEY` **must** be set; if it is missing the server returns 500 to avoid accidentally exposing the endpoint.
+- All GET routes (status polling, results) remain public for demo purposes.
+- This approach is simple, effective for a portfolio prototype, and does not require AWS Cognito or IAM setup.
+
+> **Note:** Once the system is fully tested and stable, this restriction can be removed or replaced with a more scalable authentication method (e.g. Cognito, OAuth, or public access with rate limiting) to allow public job submissions.

@@ -1,0 +1,16 @@
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+# Dependencies (root-level if any)
+node_modules/
+
+# pnpm
+.pnpm-store/
+
+# npm lockfile (this repo uses pnpm)
+package-lock.json
