@@ -11,10 +11,19 @@ import { JobSubmissionSchema } from "@/lib/types";
 export async function POST(request: NextRequest) {
   const apiKey = request.headers.get("x-internal-api-key");
   const expectedKey = process.env.INTERNAL_API_KEY;
+  const isDev = process.env.NODE_ENV === "development";
 
-  // Enforce API key only when INTERNAL_API_KEY is configured in the environment.
-  // During local prototype development the env var is intentionally unset so
-  // the form works without any setup from the developer.
+  // In non-development environments, require INTERNAL_API_KEY to be configured
+  // so that the endpoint does not become publicly accessible by accident.
+  if (!expectedKey && !isDev) {
+    return NextResponse.json(
+      { error: "Server misconfigured: INTERNAL_API_KEY is not set" },
+      { status: 500 }
+    );
+  }
+
+  // Enforce API key whenever it is configured. In development, leaving
+  // INTERNAL_API_KEY unset intentionally bypasses this check for easier setup.
   if (expectedKey && apiKey !== expectedKey) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

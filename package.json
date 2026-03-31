@@ -7,7 +7,7 @@
     "build": "pnpm --filter web build",
     "lint": "pnpm --filter web lint",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r --if-present test"
   },
   "engines": {
     "node": ">=22",

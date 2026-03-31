@@ -277,7 +277,6 @@ export default function JobPage() {
               {STEPS.map((step, i) => {
                 const isDone = i < currentIndex;
                 const isActive = i === currentIndex;
-                const isPending = i > currentIndex;
 
                 return (
                   <li key={step.status} className="flex items-start gap-4">
@@ -349,7 +348,7 @@ export default function JobPage() {
                         variant="outline"
                         className="shrink-0 border-violet-500/40 text-violet-400 text-sm"
                       >
-                        {isPending ? "Waiting" : "Running"}
+                        Running
                       </Badge>
                     )}
                   </li>
