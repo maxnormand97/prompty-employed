@@ -1,3 +1,6 @@
+# AWS CLI local artifacts
+aws/
+clizip
 # Editor
 .vscode/
 .idea/
