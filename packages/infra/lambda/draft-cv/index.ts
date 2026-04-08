@@ -46,11 +46,17 @@ const bedrock = new BedrockRuntimeClient({});
 
 // ── Environment variables ──────────────────────────────────────────────────
 
-const BEDROCK_MODEL_ID =
-  process.env.BEDROCK_MODEL_ID ??
-  "anthropic.claude-3-7-sonnet-20250219-v1:0";
-const JOBS_TABLE_NAME = process.env.JOBS_TABLE_NAME!;
-const RESULTS_BUCKET_NAME = process.env.RESULTS_BUCKET_NAME!;
+function getRequiredEnvVar(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim() === "") {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+const BEDROCK_MODEL_ID = getRequiredEnvVar("BEDROCK_MODEL_ID");
+const JOBS_TABLE_NAME = getRequiredEnvVar("JOBS_TABLE_NAME");
+const RESULTS_BUCKET_NAME = getRequiredEnvVar("RESULTS_BUCKET_NAME");
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -185,52 +191,54 @@ export async function handler(event: DraftCVInput): Promise<DraftCVOutput> {
   // 1. Update status to DRAFTING
   await setJobStatus(jobId, "DRAFTING");
 
-  // 2. Fetch resume and job description text from S3
-  const [resume, jobDescription] = await Promise.all([
-    readS3Object(s3ResumeKey),
-    readS3Object(s3JobDescKey),
-  ]);
+  try {
+    // 2. Fetch resume and job description text from S3
+    const [resume, jobDescription] = await Promise.all([
+      readS3Object(s3ResumeKey),
+      readS3Object(s3JobDescKey),
+    ]);
 
-  // 3. Build prompt and call Bedrock
-  const prompt = buildDraftPrompt(resume, jobDescription);
-  const rawResponse = await invokeBedrockText(prompt);
+    // 3. Build prompt and call Bedrock
+    const prompt = buildDraftPrompt(resume, jobDescription);
+    const rawResponse = await invokeBedrockText(prompt);
 
-  // 4. Split response on delimiter
-  const DELIMITER = "---COVER_LETTER_START---";
-  const delimiterIndex = rawResponse.indexOf(DELIMITER);
-  if (delimiterIndex === -1) {
-    const errorMessage = "Bedrock response missing cover letter delimiter";
+    // 4. Split response on delimiter
+    const DELIMITER = "---COVER_LETTER_START---";
+    const delimiterIndex = rawResponse.indexOf(DELIMITER);
+    if (delimiterIndex === -1) {
+      throw new Error("Bedrock response missing cover letter delimiter");
+    }
+
+    const tailoredCV = rawResponse.slice(0, delimiterIndex).trim();
+    const coverLetter = rawResponse.slice(delimiterIndex + DELIMITER.length).trim();
+
+    if (!tailoredCV || !coverLetter) {
+      throw new Error("Bedrock response produced empty CV or cover letter");
+    }
+
+    // 5. Write artefacts to S3
+    const s3TailoredCVKey = `results/${jobId}/tailored-cv.md`;
+    const s3CoverLetterKey = `results/${jobId}/cover-letter.md`;
+
+    await Promise.all([
+      writeS3Object(s3TailoredCVKey, tailoredCV),
+      writeS3Object(s3CoverLetterKey, coverLetter),
+    ]);
+
+    console.log(
+      JSON.stringify({ message: "DraftCVLambda complete", jobId, s3TailoredCVKey, s3CoverLetterKey })
+    );
+
+    // 6. Return S3 keys for the next Step Function state
+    return {
+      jobId,
+      s3TailoredCVKey,
+      s3CoverLetterKey,
+      s3JobDescKey,
+    };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
     await setJobStatus(jobId, "FAILED", errorMessage);
-    throw new Error(errorMessage);
+    throw err;
   }
-
-  const tailoredCV = rawResponse.slice(0, delimiterIndex).trim();
-  const coverLetter = rawResponse.slice(delimiterIndex + DELIMITER.length).trim();
-
-  if (!tailoredCV || !coverLetter) {
-    const errorMessage = "Bedrock response produced empty CV or cover letter";
-    await setJobStatus(jobId, "FAILED", errorMessage);
-    throw new Error(errorMessage);
-  }
-
-  // 5. Write artefacts to S3
-  const s3TailoredCVKey = `results/${jobId}/tailored-cv.md`;
-  const s3CoverLetterKey = `results/${jobId}/cover-letter.md`;
-
-  await Promise.all([
-    writeS3Object(s3TailoredCVKey, tailoredCV),
-    writeS3Object(s3CoverLetterKey, coverLetter),
-  ]);
-
-  console.log(
-    JSON.stringify({ message: "DraftCVLambda complete", jobId, s3TailoredCVKey, s3CoverLetterKey })
-  );
-
-  // 6. Return S3 keys for the next Step Function state
-  return {
-    jobId,
-    s3TailoredCVKey,
-    s3CoverLetterKey,
-    s3JobDescKey,
-  };
 }

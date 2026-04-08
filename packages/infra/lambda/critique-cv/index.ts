@@ -14,8 +14,8 @@
  *        - likelihoodRationale — one-paragraph likelihood explanation
  *        - suggestedImprovements — array of quick-win strings
  *        - gapAnalysis         — array of { gap, advice, priority } objects
- *   4. Write the full analysis result as JSON to S3.
- *   5. Write all result fields to the DynamoDB job record and set status to "COMPLETE".
+ *   5. Write the full analysis result as JSON to S3.
+ *   6. Write the S3 key reference to the DynamoDB job record and set status to "COMPLETE".
  *
  * Environment variables (set by CDK):
  *   BEDROCK_MODEL_ID      — e.g. "anthropic.claude-3-haiku-20240307-v1:0"
@@ -51,10 +51,17 @@ const bedrock = new BedrockRuntimeClient({});
 
 // ── Environment variables ──────────────────────────────────────────────────
 
-const BEDROCK_MODEL_ID =
-  process.env.BEDROCK_MODEL_ID ?? "anthropic.claude-3-haiku-20240307-v1:0";
-const JOBS_TABLE_NAME = process.env.JOBS_TABLE_NAME!;
-const RESULTS_BUCKET_NAME = process.env.RESULTS_BUCKET_NAME!;
+function getRequiredEnvVar(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim() === "") {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+const BEDROCK_MODEL_ID = getRequiredEnvVar("BEDROCK_MODEL_ID");
+const JOBS_TABLE_NAME = getRequiredEnvVar("JOBS_TABLE_NAME");
+const RESULTS_BUCKET_NAME = getRequiredEnvVar("RESULTS_BUCKET_NAME");
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -63,6 +70,17 @@ interface CritiqueCVInput {
   s3TailoredCVKey: string;
   s3CoverLetterKey: string;
   s3JobDescKey: string;
+}
+
+interface CritiqueCVOutput {
+  jobId: string;
+  critiqueNotes: string;
+  fitScore: number;
+  fitRationale: string;
+  likelihoodScore: number;
+  likelihoodRationale: string;
+  suggestedImprovements: string[];
+  gapAnalysis: GapAdvice[];
 }
 
 interface GapAdvice {
@@ -109,39 +127,24 @@ async function writeS3Object(key: string, body: string, contentType = "applicati
 }
 
 /**
- * Update the DynamoDB job record on completion.
+ * Update the DynamoDB job record on completion, storing only the S3 key reference.
+ * The full analysis payload lives in S3; DynamoDB holds metadata only.
  */
 async function setJobComplete(
   jobId: string,
-  result: CritiqueResult,
+  s3AnalysisKey: string,
   completedAt: string
 ): Promise<void> {
   await dynamo.send(
     new UpdateItemCommand({
       TableName: JOBS_TABLE_NAME,
       Key: { jobId: { S: jobId } },
-      UpdateExpression: [
-        "SET #s = :s",
-        "completedAt = :ca",
-        "critiqueNotes = :cn",
-        "fitScore = :fs",
-        "fitRationale = :fr",
-        "likelihoodScore = :ls",
-        "likelihoodRationale = :lr",
-        "suggestedImprovements = :si",
-        "gapAnalysis = :ga",
-      ].join(", "),
+      UpdateExpression: "SET #s = :s, completedAt = :ca, s3Key = :sk",
       ExpressionAttributeNames: { "#s": "status" },
       ExpressionAttributeValues: {
         ":s": { S: "COMPLETE" },
         ":ca": { S: completedAt },
-        ":cn": { S: result.critiqueNotes },
-        ":fs": { N: String(result.fitScore) },
-        ":fr": { S: result.fitRationale },
-        ":ls": { N: String(result.likelihoodScore) },
-        ":lr": { S: result.likelihoodRationale },
-        ":si": { S: JSON.stringify(result.suggestedImprovements) },
-        ":ga": { S: JSON.stringify(result.gapAnalysis) },
+        ":sk": { S: s3AnalysisKey },
       },
     })
   );
@@ -242,6 +245,7 @@ async function invokeBedrockText(prompt: string): Promise<string> {
 
 /**
  * Parse and validate the JSON critique response from Claude.
+ * Validates both the top-level shape and the element shapes within arrays.
  */
 function parseCritiqueResponse(raw: string): CritiqueResult {
   let parsed: unknown;
@@ -268,6 +272,29 @@ function parseCritiqueResponse(raw: string): CritiqueResult {
     throw new Error("Bedrock response failed schema validation");
   }
 
+  if (!result.suggestedImprovements.every((item: unknown) => typeof item === "string")) {
+    throw new Error(
+      "Bedrock response failed schema validation: suggestedImprovements must be an array of strings"
+    );
+  }
+
+  const validPriorities = new Set(["HIGH", "MEDIUM", "LOW"]);
+  if (
+    !result.gapAnalysis.every((item: unknown) => {
+      if (typeof item !== "object" || item === null) return false;
+      const g = item as Record<string, unknown>;
+      return (
+        typeof g.gap === "string" && g.gap.trim() !== "" &&
+        typeof g.advice === "string" && g.advice.trim() !== "" &&
+        typeof g.priority === "string" && validPriorities.has(g.priority)
+      );
+    })
+  ) {
+    throw new Error(
+      "Bedrock response failed schema validation: gapAnalysis items must have non-empty gap/advice strings and priority in {HIGH, MEDIUM, LOW}"
+    );
+  }
+
   return {
     critiqueNotes: result.critiqueNotes as string,
     fitScore,
@@ -281,7 +308,7 @@ function parseCritiqueResponse(raw: string): CritiqueResult {
 
 // ── Handler ────────────────────────────────────────────────────────────────
 
-export async function handler(event: CritiqueCVInput): Promise<void> {
+export async function handler(event: CritiqueCVInput): Promise<CritiqueCVOutput> {
   const { jobId, s3TailoredCVKey, s3CoverLetterKey, s3JobDescKey } = event;
 
   console.log(JSON.stringify({ message: "CritiqueCVLambda started", jobId }));
@@ -297,36 +324,47 @@ export async function handler(event: CritiqueCVInput): Promise<void> {
     })
   );
 
-  // 2. Fetch all artefacts from S3
-  const [tailoredCV, coverLetter, jobDescription] = await Promise.all([
-    readS3Object(s3TailoredCVKey),
-    readS3Object(s3CoverLetterKey),
-    readS3Object(s3JobDescKey),
-  ]);
-
-  // 3. Build prompt and call Bedrock
-  const prompt = buildCritiquePrompt(tailoredCV, coverLetter, jobDescription);
-  const rawResponse = await invokeBedrockText(prompt);
-
-  // 4. Parse and validate the response
-  let result: CritiqueResult;
   try {
-    result = parseCritiqueResponse(rawResponse);
+    // 2. Fetch all artefacts from S3
+    const [tailoredCV, coverLetter, jobDescription] = await Promise.all([
+      readS3Object(s3TailoredCVKey),
+      readS3Object(s3CoverLetterKey),
+      readS3Object(s3JobDescKey),
+    ]);
+
+    // 3. Build prompt and call Bedrock
+    const prompt = buildCritiquePrompt(tailoredCV, coverLetter, jobDescription);
+    const rawResponse = await invokeBedrockText(prompt);
+
+    // 4. Parse and validate the response
+    const result = parseCritiqueResponse(rawResponse);
+
+    // 5. Write analysis JSON to S3
+    const completedAt = new Date().toISOString();
+    const s3AnalysisKey = `results/${jobId}/analysis.json`;
+    await writeS3Object(s3AnalysisKey, JSON.stringify({ ...result, jobId, completedAt }, null, 2));
+
+    // 6. Write s3Key reference to DynamoDB and set status to COMPLETE
+    await setJobComplete(jobId, s3AnalysisKey, completedAt);
+
+    console.log(
+      JSON.stringify({ message: "CritiqueCVLambda complete", jobId, fitScore: result.fitScore, likelihoodScore: result.likelihoodScore })
+    );
+
+    // 7. Return the critique payload for the Step Function
+    return {
+      jobId,
+      critiqueNotes: result.critiqueNotes,
+      fitScore: result.fitScore,
+      fitRationale: result.fitRationale,
+      likelihoodScore: result.likelihoodScore,
+      likelihoodRationale: result.likelihoodRationale,
+      suggestedImprovements: result.suggestedImprovements,
+      gapAnalysis: result.gapAnalysis,
+    };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     await setJobFailed(jobId, errorMessage);
     throw err;
   }
-
-  // 5. Write analysis JSON to S3
-  const completedAt = new Date().toISOString();
-  const s3AnalysisKey = `results/${jobId}/analysis.json`;
-  await writeS3Object(s3AnalysisKey, JSON.stringify({ ...result, jobId, completedAt }, null, 2));
-
-  // 6. Write results to DynamoDB and set status to COMPLETE
-  await setJobComplete(jobId, result, completedAt);
-
-  console.log(
-    JSON.stringify({ message: "CritiqueCVLambda complete", jobId, fitScore: result.fitScore, likelihoodScore: result.likelihoodScore })
-  );
 }
