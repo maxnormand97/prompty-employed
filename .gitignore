@@ -1,6 +1,14 @@
 # AWS CLI local artifacts
 aws/
 clizip
+
+# Lambda build artifacts
+packages/infra/lambda/draft-cv/dist/
+packages/infra/lambda/draft-cv/draft-cv.zip
+packages/infra/lambda/draft-cv/node_modules/
+packages/infra/lambda/critique-cv/dist/
+packages/infra/lambda/critique-cv/critique-cv.zip
+packages/infra/lambda/critique-cv/node_modules/
 # Editor
 .vscode/
 .idea/
