@@ -1,5 +1,5 @@
 /**
- * DraftCVLambda — Reference Implementation
+ * DraftCVLambda
  *
  * Node 1 of the TailorCVWorkflow Step Function.
  *
@@ -24,6 +24,9 @@
  *   - s3:PutObject on results/{jobId}/*
  */
 
+import * as fs from "fs";
+import * as path from "path";
+
 import {
   BedrockRuntimeClient,
   InvokeModelCommand,
@@ -38,13 +41,51 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 
-// ── AWS SDK clients ────────────────────────────────────────────────────────
+// ── Logging ────────────────────────────────────────────────────────────────
 
-const s3 = new S3Client({});
-const dynamo = new DynamoDBClient({});
-const bedrock = new BedrockRuntimeClient({});
+export function log(
+  level: "info" | "warn" | "error",
+  message: string,
+  context?: Record<string, unknown>
+): void {
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+      ...context,
+    })
+  );
+}
 
-// ── Environment variables ──────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
+
+export interface DraftCVInput {
+  jobId: string;
+  s3ResumeKey: string;
+  s3JobDescKey: string;
+}
+
+export interface DraftCVOutput {
+  jobId: string;
+  s3TailoredCVKey: string;
+  s3CoverLetterKey: string;
+  s3JobDescKey: string;
+}
+
+export interface DraftCVClients {
+  s3: S3Client;
+  dynamo: DynamoDBClient;
+  bedrock: BedrockRuntimeClient;
+}
+
+export interface DraftCVEnv {
+  bedrockModelId: string;
+  jobsTableName: string;
+  resultsBucketName: string;
+}
+
+// ── Environment ────────────────────────────────────────────────────────────
 
 function getRequiredEnvVar(name: string): string {
   const value = process.env[name];
@@ -54,45 +95,39 @@ function getRequiredEnvVar(name: string): string {
   return value;
 }
 
-const BEDROCK_MODEL_ID = getRequiredEnvVar("BEDROCK_MODEL_ID");
-const JOBS_TABLE_NAME = getRequiredEnvVar("JOBS_TABLE_NAME");
-const RESULTS_BUCKET_NAME = getRequiredEnvVar("RESULTS_BUCKET_NAME");
-
-// ── Types ──────────────────────────────────────────────────────────────────
-
-interface DraftCVInput {
-  jobId: string;
-  s3ResumeKey: string;
-  s3JobDescKey: string;
-}
-
-interface DraftCVOutput {
-  jobId: string;
-  s3TailoredCVKey: string;
-  s3CoverLetterKey: string;
-  s3JobDescKey: string;
+export function loadEnv(): DraftCVEnv {
+  return {
+    bedrockModelId: getRequiredEnvVar("BEDROCK_MODEL_ID"),
+    jobsTableName: getRequiredEnvVar("JOBS_TABLE_NAME"),
+    resultsBucketName: getRequiredEnvVar("RESULTS_BUCKET_NAME"),
+  };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/**
- * Read a UTF-8 text object from S3.
- */
-async function readS3Object(key: string): Promise<string> {
+export async function readS3Object(
+  s3: S3Client,
+  bucket: string,
+  key: string
+): Promise<string> {
+  log("info", "Reading S3 object", { bucket, key });
   const response = await s3.send(
-    new GetObjectCommand({ Bucket: RESULTS_BUCKET_NAME, Key: key })
+    new GetObjectCommand({ Bucket: bucket, Key: key })
   );
   if (!response.Body) throw new Error(`Empty body for S3 key: ${key}`);
   return response.Body.transformToString("utf-8");
 }
 
-/**
- * Write a UTF-8 text object to S3.
- */
-async function writeS3Object(key: string, body: string): Promise<void> {
+export async function writeS3Object(
+  s3: S3Client,
+  bucket: string,
+  key: string,
+  body: string
+): Promise<void> {
+  log("info", "Writing S3 object", { bucket, key, bytes: body.length });
   await s3.send(
     new PutObjectCommand({
-      Bucket: RESULTS_BUCKET_NAME,
+      Bucket: bucket,
       Key: key,
       Body: body,
       ContentType: "text/markdown; charset=utf-8",
@@ -100,17 +135,17 @@ async function writeS3Object(key: string, body: string): Promise<void> {
   );
 }
 
-/**
- * Update the DynamoDB job record status field.
- */
-async function setJobStatus(
+export async function setJobStatus(
+  dynamo: DynamoDBClient,
+  tableName: string,
   jobId: string,
   status: "DRAFTING" | "FAILED",
   errorMessage?: string
 ): Promise<void> {
+  log("info", "Setting job status", { jobId, status, errorMessage });
   await dynamo.send(
     new UpdateItemCommand({
-      TableName: JOBS_TABLE_NAME,
+      TableName: tableName,
       Key: { jobId: { S: jobId } },
       UpdateExpression: errorMessage
         ? "SET #s = :s, errorMessage = :e"
@@ -130,7 +165,7 @@ async function setJobStatus(
  * User-supplied text is wrapped in XML delimiter tags as recommended by Anthropic
  * to separate instructions from untrusted content (prompt injection mitigation).
  */
-function buildDraftPrompt(resume: string, jobDescription: string): string {
+export function buildDraftPrompt(resume: string, jobDescription: string): string {
   return `You are an expert career consultant and professional CV writer.
 
 Your task is to produce TWO artefacts for the candidate below:
@@ -156,10 +191,12 @@ ${jobDescription}
 Respond with only the two Markdown artefacts separated by the delimiter. No preamble.`;
 }
 
-/**
- * Call Amazon Bedrock (Claude) and return the raw text response.
- */
-async function invokeBedrockText(prompt: string): Promise<string> {
+export async function invokeBedrockText(
+  bedrock: BedrockRuntimeClient,
+  modelId: string,
+  prompt: string
+): Promise<string> {
+  log("info", "Invoking Bedrock model", { modelId, promptLength: prompt.length });
   const body = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
     max_tokens: 4096,
@@ -168,7 +205,7 @@ async function invokeBedrockText(prompt: string): Promise<string> {
 
   const response = await bedrock.send(
     new InvokeModelCommand({
-      modelId: BEDROCK_MODEL_ID,
+      modelId,
       contentType: "application/json",
       accept: "application/json",
       body: Buffer.from(body),
@@ -178,29 +215,49 @@ async function invokeBedrockText(prompt: string): Promise<string> {
   const parsed = JSON.parse(Buffer.from(response.body).toString("utf-8"));
   const text: string = parsed?.content?.[0]?.text;
   if (!text) throw new Error("Bedrock returned an empty or malformed response");
+  log("info", "Bedrock response received", { responseLength: text.length });
   return text;
 }
 
-// ── Handler ────────────────────────────────────────────────────────────────
+// ── Core business logic ────────────────────────────────────────────────────
 
-export async function handler(event: DraftCVInput): Promise<DraftCVOutput> {
+export async function runDraftCV(
+  event: DraftCVInput,
+  clients: DraftCVClients,
+  env: DraftCVEnv
+): Promise<DraftCVOutput> {
   const { jobId, s3ResumeKey, s3JobDescKey } = event;
+  const { s3, dynamo, bedrock } = clients;
+  const { bedrockModelId, jobsTableName, resultsBucketName } = env;
 
-  console.log(JSON.stringify({ message: "DraftCVLambda started", jobId }));
+  log("info", "runDraftCV started", {
+    jobId,
+    s3ResumeKey,
+    s3JobDescKey,
+    bedrockModelId,
+    jobsTableName,
+    resultsBucketName,
+  });
 
   // 1. Update status to DRAFTING
-  await setJobStatus(jobId, "DRAFTING");
+  await setJobStatus(dynamo, jobsTableName, jobId, "DRAFTING");
 
   try {
     // 2. Fetch resume and job description text from S3
+    log("info", "Fetching S3 artefacts", { jobId });
     const [resume, jobDescription] = await Promise.all([
-      readS3Object(s3ResumeKey),
-      readS3Object(s3JobDescKey),
+      readS3Object(s3, resultsBucketName, s3ResumeKey),
+      readS3Object(s3, resultsBucketName, s3JobDescKey),
     ]);
+    log("info", "S3 artefacts fetched", {
+      jobId,
+      resumeLength: resume.length,
+      jobDescLength: jobDescription.length,
+    });
 
     // 3. Build prompt and call Bedrock
     const prompt = buildDraftPrompt(resume, jobDescription);
-    const rawResponse = await invokeBedrockText(prompt);
+    const rawResponse = await invokeBedrockText(bedrock, bedrockModelId, prompt);
 
     // 4. Split response on delimiter
     const DELIMITER = "---COVER_LETTER_START---";
@@ -216,29 +273,155 @@ export async function handler(event: DraftCVInput): Promise<DraftCVOutput> {
       throw new Error("Bedrock response produced empty CV or cover letter");
     }
 
+    log("info", "Response parsed", {
+      jobId,
+      tailoredCVLength: tailoredCV.length,
+      coverLetterLength: coverLetter.length,
+    });
+
     // 5. Write artefacts to S3
     const s3TailoredCVKey = `results/${jobId}/tailored-cv.md`;
     const s3CoverLetterKey = `results/${jobId}/cover-letter.md`;
 
+    log("info", "Writing artefacts to S3", { jobId, s3TailoredCVKey, s3CoverLetterKey });
     await Promise.all([
-      writeS3Object(s3TailoredCVKey, tailoredCV),
-      writeS3Object(s3CoverLetterKey, coverLetter),
+      writeS3Object(s3, resultsBucketName, s3TailoredCVKey, tailoredCV),
+      writeS3Object(s3, resultsBucketName, s3CoverLetterKey, coverLetter),
     ]);
 
-    console.log(
-      JSON.stringify({ message: "DraftCVLambda complete", jobId, s3TailoredCVKey, s3CoverLetterKey })
-    );
+    log("info", "runDraftCV complete", { jobId, s3TailoredCVKey, s3CoverLetterKey });
 
     // 6. Return S3 keys for the next Step Function state
-    return {
-      jobId,
-      s3TailoredCVKey,
-      s3CoverLetterKey,
-      s3JobDescKey,
-    };
+    return { jobId, s3TailoredCVKey, s3CoverLetterKey, s3JobDescKey };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    await setJobStatus(jobId, "FAILED", errorMessage);
+    const stack = err instanceof Error ? err.stack : undefined;
+    log("error", "runDraftCV failed", { jobId, error: errorMessage, stack });
+    await setJobStatus(dynamo, jobsTableName, jobId, "FAILED", errorMessage);
     throw err;
   }
+}
+
+// ── Lambda handler ─────────────────────────────────────────────────────────
+
+export async function handler(event: DraftCVInput): Promise<DraftCVOutput> {
+  log("info", "DraftCVLambda handler invoked", { event });
+  const env = loadEnv();
+  log("info", "Environment loaded", {
+    bedrockModelId: env.bedrockModelId,
+    jobsTableName: env.jobsTableName,
+    resultsBucketName: env.resultsBucketName,
+  });
+  const clients: DraftCVClients = {
+    s3: new S3Client({}),
+    dynamo: new DynamoDBClient({}),
+    bedrock: new BedrockRuntimeClient({}),
+  };
+  try {
+    return await runDraftCV(event, clients, env);
+  } catch (err) {
+    log("error", "DraftCVLambda handler error", {
+      jobId: event.jobId,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    throw err;
+  }
+}
+
+// ── Local development entry point ──────────────────────────────────────────
+
+async function main(): Promise<void> {
+  const testDataDir = path.join(__dirname, "../../test-data");
+  const resume = fs.readFileSync(path.join(testDataDir, "sample-resume.txt"), "utf-8");
+  const jobDesc = fs.readFileSync(path.join(testDataDir, "sample-job-desc.txt"), "utf-8");
+
+  const mockEvent: DraftCVInput = {
+    jobId: "local-test-job-001",
+    s3ResumeKey: "inputs/local-test-job-001/resume.txt",
+    s3JobDescKey: "inputs/local-test-job-001/job-desc.txt",
+  };
+
+  const mockEnv: DraftCVEnv = {
+    bedrockModelId: "anthropic.claude-3-7-sonnet-20250219-v1:0",
+    jobsTableName: "PromptlyEmployedJobs",
+    resultsBucketName: "PromptlyEmployedResults",
+  };
+
+  // In-memory S3 store seeded with local test data
+  const s3Store: Record<string, string> = {
+    [mockEvent.s3ResumeKey]: resume,
+    [mockEvent.s3JobDescKey]: jobDesc,
+  };
+
+  const s3Stub = {
+    send: async (command: unknown) => {
+      if (command instanceof GetObjectCommand) {
+        const key = (command as GetObjectCommand).input.Key!;
+        const content = s3Store[key];
+        if (!content) throw new Error(`Mock S3: key not found: ${key}`);
+        return { Body: { transformToString: (_enc: string) => Promise.resolve(content) } };
+      }
+      if (command instanceof PutObjectCommand) {
+        const { Key, Body } = (command as PutObjectCommand).input;
+        s3Store[Key!] = Body as string;
+        log("info", "[Mock S3] PutObject", { key: Key, bytes: (Body as string).length });
+        return {};
+      }
+      throw new Error(`Mock S3: unhandled command type`);
+    },
+  } as unknown as S3Client;
+
+  const dynamoStub = {
+    send: async (command: unknown) => {
+      if (command instanceof UpdateItemCommand) {
+        const { Key, ExpressionAttributeValues } = (command as UpdateItemCommand).input;
+        log("info", "[Mock DynamoDB] UpdateItem", {
+          key: Key,
+          status: ExpressionAttributeValues?.[":s"]?.S,
+        });
+        return {};
+      }
+      throw new Error(`Mock DynamoDB: unhandled command type`);
+    },
+  } as unknown as DynamoDBClient;
+
+  const DELIMITER = "---COVER_LETTER_START---";
+  const bedrockStub = {
+    send: async (_command: unknown) => {
+      const tailoredCV = fs.readFileSync(
+        path.join(testDataDir, "sample-tailored-cv.txt"),
+        "utf-8"
+      );
+      const coverLetter = fs.readFileSync(
+        path.join(testDataDir, "sample-cover-letter.txt"),
+        "utf-8"
+      );
+      const responseText = `${tailoredCV}\n${DELIMITER}\n${coverLetter}`;
+      return { body: Buffer.from(JSON.stringify({ content: [{ text: responseText }] })) };
+    },
+  } as unknown as BedrockRuntimeClient;
+
+  const clients: DraftCVClients = { s3: s3Stub, dynamo: dynamoStub, bedrock: bedrockStub };
+
+  log("info", "Starting local DraftCV run", { event: mockEvent });
+  try {
+    const result = await runDraftCV(mockEvent, clients, mockEnv);
+    console.log("\n─── Result ───────────────────────────────────────────────");
+    console.log(JSON.stringify(result, null, 2));
+    console.log("\n─── Generated CV ─────────────────────────────────────────");
+    console.log(s3Store[result.s3TailoredCVKey]);
+    console.log("\n─── Cover Letter ─────────────────────────────────────────");
+    console.log(s3Store[result.s3CoverLetterKey]);
+  } catch (err) {
+    log("error", "Local run failed", {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  main();
 }

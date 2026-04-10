@@ -1,0 +1,45 @@
+# Jane Smith
+**Senior Software Engineer — Frontend Platform**
+
+jane.smith@email.com | linkedin.com/in/janesmith | Melbourne, AU
+
+---
+
+## Professional Summary
+
+Senior software engineer with 5+ years delivering high-quality TypeScript and React applications at scale. Proven experience building shared component libraries, improving developer productivity through internal tooling, and deploying cloud-native applications on AWS. Passionate about developer experience and engineering best practices.
+
+---
+
+## Experience
+
+### Software Engineer — Frontend
+**Seek** · Melbourne, AU · Mar 2021 – Present
+
+- Built and maintained a shared React/TypeScript component library used across 6 product teams and 2M+ monthly active users
+- Developed internal code generation tooling that reduced boilerplate setup time by 60% for new features
+- Delivered accessible (WCAG 2.1 AA) UI components adopted across the Seek design system
+- Deployed REST APIs on AWS Lambda and ECS; contributed to CI/CD pipeline improvements reducing build times by 40%
+
+### Junior Software Engineer
+**MYOB** · Melbourne, AU · Jan 2019 – Feb 2021
+
+- Contributed to migration of legacy jQuery codebase to React, improving maintainability and test coverage
+- Wrote unit and integration tests achieving 80% coverage on critical billing flows
+- Participated in design system working group to standardise UI components across products
+
+---
+
+## Technical Skills
+
+**Languages:** TypeScript, JavaScript, Python
+**Frontend:** React, Next.js, HTML, CSS, Storybook
+**Backend:** Node.js, Express, REST APIs
+**Cloud:** AWS (Lambda, S3, DynamoDB, ECS), Docker
+**Tooling:** Git, GitHub Actions, Jest, Postgres, Nx
+
+---
+
+## Education
+
+**B.Sc. Computer Science** — University of Melbourne, 2018

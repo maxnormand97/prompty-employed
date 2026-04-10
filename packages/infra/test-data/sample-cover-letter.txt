@@ -1,0 +1,12 @@
+Dear Hiring Manager,
+
+I'm writing to apply for the Senior Software Engineer — Frontend Platform role at Canva. With five years of experience building TypeScript and React applications at scale, including hands-on work with shared component libraries and internal developer tooling, I'm excited by the opportunity to help Canva's frontend platform team serve its 200+ engineers more effectively.
+
+At Seek, I built and maintained a shared React/TypeScript component library used across six product teams and over two million monthly active users. I also developed internal code generation tooling that cut boilerplate setup time by 60%, a direct parallel to the productivity tooling work described in this role. I have deep experience with accessibility, having delivered WCAG 2.1 AA compliant components adopted across Seek's design system.
+
+I'm drawn to Canva specifically because of the scale and craft involved in the frontend platform problem. Enabling hundreds of engineers to ship accessible, consistent, and high-quality UI is one of the highest-leverage investments a product company can make, and I would bring genuine passion for that mission to the team.
+
+I'd welcome the opportunity to discuss the role further. Thank you for your time.
+
+Best regards,
+Jane Smith
