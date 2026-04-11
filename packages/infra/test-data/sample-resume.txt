@@ -1,0 +1,28 @@
+Jane Smith
+jane.smith@email.com | linkedin.com/in/janesmith | Melbourne, AU
+
+SUMMARY
+Software engineer with 5 years of experience building web applications using React, TypeScript, and Node.js. Experience with AWS, Docker, and CI/CD pipelines.
+
+EXPERIENCE
+
+Software Engineer — Seek
+Melbourne, AU | Mar 2021 – Present
+- Built and maintained React/TypeScript front-end features used by 2M+ monthly active users
+- Developed REST APIs in Node.js and deployed to AWS Lambda and ECS
+- Improved CI/CD pipeline build times by 40% using caching strategies
+
+Junior Software Engineer — MYOB
+Melbourne, AU | Jan 2019 – Feb 2021
+- Contributed to migration of legacy jQuery codebase to React
+- Wrote unit and integration tests achieving 80% coverage on critical billing flows
+
+SKILLS
+Languages: TypeScript, JavaScript, Python
+Frontend: React, Next.js, HTML, CSS
+Backend: Node.js, Express, REST APIs
+Cloud: AWS (Lambda, S3, DynamoDB, ECS), Docker
+Tools: Git, GitHub Actions, Jest, Postgres
+
+EDUCATION
+B.Sc. Computer Science — University of Melbourne, 2018

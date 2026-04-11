@@ -1,0 +1,26 @@
+Senior Software Engineer — Frontend Platform
+Canva | Sydney, AU (Hybrid)
+
+About the role:
+We're looking for a Senior Software Engineer to join our Frontend Platform team. You'll own the developer tooling and component library used by 200+ engineers across Canva's product org.
+
+Responsibilities:
+- Design and maintain a shared React component library used across all Canva product surfaces
+- Build internal tooling to improve developer productivity (code generation, linting, documentation)
+- Partner with design systems, accessibility, and product teams
+- Drive adoption of best practices in TypeScript and React across the engineering org
+
+Requirements:
+- 5+ years of experience in software engineering
+- Expert-level TypeScript and React
+- Experience building and maintaining design systems or component libraries
+- Strong understanding of web performance, accessibility (WCAG 2.1), and testing
+- Experience with monorepo tooling (Nx, Turborepo, or similar)
+- Experience with AWS or other cloud platforms is a plus
+
+Nice to have:
+- Experience with Storybook, Chromatic, or visual regression testing
+- Contributions to open source projects
+- Experience working in a high-growth product company
+
+Salary: AU$160,000 – AU$200,000 + equity

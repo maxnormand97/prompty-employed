@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest --config jest.config.cjs",
+    "start": "ts-node dev.ts"
   },
   "keywords": [],
   "author": "",
@@ -13,5 +14,14 @@
     "@aws-sdk/client-bedrock-runtime": "^3.1028.0",
     "@aws-sdk/client-dynamodb": "^3.1028.0",
     "@aws-sdk/client-s3": "^3.1028.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.19.17",
+    "aws-sdk-client-mock": "^4.1.0",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.4.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
