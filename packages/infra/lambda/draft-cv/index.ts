@@ -52,17 +52,22 @@ export function log(
     timestamp: new Date().toISOString(),
     level,
     message,
-    ...(context ? { context } : {}),
+    ...(context !== undefined ? { context } : {}),
   };
 
-  const write =
-    level === "error"
-      ? console.error
-      : level === "warn"
-        ? console.warn
-        : console.log;
+  const serialized = JSON.stringify(payload);
 
-  write(JSON.stringify(payload));
+  if (level === "error") {
+    console.error(serialized);
+    return;
+  }
+
+  if (level === "warn") {
+    console.warn(serialized);
+    return;
+  }
+
+  console.log(serialized);
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
