@@ -10,13 +10,9 @@ import {
 } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
 
-import {
-  buildDraftPrompt,
-  DraftCVClients,
-  DraftCVEnv,
-  DraftCVInput,
-  runDraftCV,
-} from "./index";
+import { buildDraftPrompt } from "./lib/prompt";
+import { DraftCVClients, DraftCVEnv, DraftCVInput } from "./lib/types";
+import { runDraftCV } from "./core";
 
 // ── Mock setup ─────────────────────────────────────────────────────────────
 

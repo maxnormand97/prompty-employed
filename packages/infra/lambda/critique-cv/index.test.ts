@@ -10,14 +10,10 @@ import {
 } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
 
-import {
-  buildCritiquePrompt,
-  CritiqueCVClients,
-  CritiqueCVEnv,
-  CritiqueCVInput,
-  parseCritiqueResponse,
-  runCritiqueCV,
-} from "./index";
+import { buildCritiquePrompt } from "./lib/prompt";
+import { parseCritiqueResponse } from "./lib/response";
+import { CritiqueCVClients, CritiqueCVEnv, CritiqueCVInput } from "./lib/types";
+import { runCritiqueCV } from "./core";
 
 // ── Mock setup ─────────────────────────────────────────────────────────────
 
