@@ -48,14 +48,21 @@ export function log(
   message: string,
   context?: Record<string, unknown>
 ): void {
-  console.log(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      ...context,
-    })
-  );
+  const payload = {
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    ...(context ? { context } : {}),
+  };
+
+  const write =
+    level === "error"
+      ? console.error
+      : level === "warn"
+        ? console.warn
+        : console.log;
+
+  write(JSON.stringify(payload));
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -306,18 +313,18 @@ export async function runDraftCV(
 
 export async function handler(event: DraftCVInput): Promise<DraftCVOutput> {
   log("info", "DraftCVLambda handler invoked", { event });
-  const env = loadEnv();
-  log("info", "Environment loaded", {
-    bedrockModelId: env.bedrockModelId,
-    jobsTableName: env.jobsTableName,
-    resultsBucketName: env.resultsBucketName,
-  });
-  const clients: DraftCVClients = {
-    s3: new S3Client({}),
-    dynamo: new DynamoDBClient({}),
-    bedrock: new BedrockRuntimeClient({}),
-  };
   try {
+    const env = loadEnv();
+    log("info", "Environment loaded", {
+      bedrockModelId: env.bedrockModelId,
+      jobsTableName: env.jobsTableName,
+      resultsBucketName: env.resultsBucketName,
+    });
+    const clients: DraftCVClients = {
+      s3: new S3Client({}),
+      dynamo: new DynamoDBClient({}),
+      bedrock: new BedrockRuntimeClient({}),
+    };
     return await runDraftCV(event, clients, env);
   } catch (err) {
     log("error", "DraftCVLambda handler error", {

@@ -53,14 +53,26 @@ export function log(
   message: string,
   context?: Record<string, unknown>
 ): void {
-  console.log(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      ...context,
-    })
-  );
+  const payload = {
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    ...(context !== undefined ? { context } : {}),
+  };
+
+  const serialized = JSON.stringify(payload);
+
+  if (level === "error") {
+    console.error(serialized);
+    return;
+  }
+
+  if (level === "warn") {
+    console.warn(serialized);
+    return;
+  }
+
+  console.log(serialized);
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -464,18 +476,18 @@ export async function runCritiqueCV(
 
 export async function handler(event: CritiqueCVInput): Promise<CritiqueCVOutput> {
   log("info", "CritiqueCVLambda handler invoked", { event });
-  const env = loadEnv();
-  log("info", "Environment loaded", {
-    bedrockModelId: env.bedrockModelId,
-    jobsTableName: env.jobsTableName,
-    resultsBucketName: env.resultsBucketName,
-  });
-  const clients: CritiqueCVClients = {
-    s3: new S3Client({}),
-    dynamo: new DynamoDBClient({}),
-    bedrock: new BedrockRuntimeClient({}),
-  };
   try {
+    const env = loadEnv();
+    log("info", "Environment loaded", {
+      bedrockModelId: env.bedrockModelId,
+      jobsTableName: env.jobsTableName,
+      resultsBucketName: env.resultsBucketName,
+    });
+    const clients: CritiqueCVClients = {
+      s3: new S3Client({}),
+      dynamo: new DynamoDBClient({}),
+      bedrock: new BedrockRuntimeClient({}),
+    };
     return await runCritiqueCV(event, clients, env);
   } catch (err) {
     log("error", "CritiqueCVLambda handler error", {
