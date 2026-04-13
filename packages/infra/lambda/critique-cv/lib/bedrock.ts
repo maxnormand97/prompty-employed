@@ -35,12 +35,15 @@ export async function invokeBedrockText(
   const text: string = parsed?.content?.[0]?.text;
   if (!text) throw new Error("Bedrock returned an empty or malformed response");
   // Reconstruct the full JSON object by prepending the assistant prefill character
-  const fullText = `{${text}`;
+  // only when the model continuation does not already include it.
+  const fullText = text.trimStart().startsWith("{") ? text : `{${text}`;
   if (stopReason === "max_tokens") {
+    const snippetLength = 200;
     log("error", "Bedrock response truncated at max_tokens limit", {
       modelId,
       responseLength: fullText.length,
-      partialResponse: fullText,
+      partialResponseSnippet: fullText.slice(0, snippetLength),
+      partialResponseSnippetTruncated: fullText.length > snippetLength,
     });
     throw new Error(
       `Bedrock response was truncated (hit max_tokens limit after ${fullText.length} chars)`

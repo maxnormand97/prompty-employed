@@ -10,7 +10,12 @@ export function parseCritiqueResponse(raw: string): CritiqueResult {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    log("error", "Bedrock response was not valid JSON", { rawResponse: raw });
+    const snippetLength = 200;
+    log("error", "Bedrock response was not valid JSON", {
+      rawResponseLength: raw.length,
+      rawResponseSnippet: raw.slice(0, snippetLength),
+      rawResponseSnippetTruncated: raw.length > snippetLength,
+    });
     throw new Error(`Bedrock response was not valid JSON (length=${raw.length})`);
   }
 

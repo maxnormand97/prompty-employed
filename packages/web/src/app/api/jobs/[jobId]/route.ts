@@ -12,11 +12,20 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
+  const awsRegion = process.env.AWS_REGION;
+  const tableName = process.env.JOBS_TABLE_NAME;
+  if (!awsRegion || !tableName) {
+    return NextResponse.json(
+      { error: "Server misconfigured: missing required AWS environment variables" },
+      { status: 500 }
+    );
+  }
+
   const { jobId } = await params;
 
   const { Item } = await dynamo.send(
     new GetItemCommand({
-      TableName: process.env.JOBS_TABLE_NAME,
+      TableName: tableName,
       Key: { jobId: { S: jobId } },
     })
   );

@@ -24,6 +24,16 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
+  const awsRegion = process.env.AWS_REGION;
+  const tableName = process.env.JOBS_TABLE_NAME;
+  const bucketName = process.env.RESULTS_BUCKET_NAME;
+  if (!awsRegion || !tableName || !bucketName) {
+    return NextResponse.json(
+      { error: "Server misconfigured: missing required AWS environment variables" },
+      { status: 500 }
+    );
+  }
+
   const { jobId } = await params;
 
   const stream = new ReadableStream({
@@ -40,7 +50,7 @@ export async function GET(
         while (Date.now() - start < TIMEOUT_MS) {
           const { Item } = await dynamo.send(
             new GetItemCommand({
-              TableName: process.env.JOBS_TABLE_NAME,
+              TableName: tableName,
               Key: { jobId: { S: jobId } },
             })
           );
@@ -59,7 +69,7 @@ export async function GET(
                 s3
                   .send(
                     new GetObjectCommand({
-                      Bucket: process.env.RESULTS_BUCKET_NAME,
+                      Bucket: bucketName,
                       Key: `results/${jobId}/analysis.json`,
                     })
                   )
@@ -67,7 +77,7 @@ export async function GET(
                 s3
                   .send(
                     new GetObjectCommand({
-                      Bucket: process.env.RESULTS_BUCKET_NAME,
+                      Bucket: bucketName,
                       Key: `results/${jobId}/tailored-cv.md`,
                     })
                   )
@@ -75,7 +85,7 @@ export async function GET(
                 s3
                   .send(
                     new GetObjectCommand({
-                      Bucket: process.env.RESULTS_BUCKET_NAME,
+                      Bucket: bucketName,
                       Key: `results/${jobId}/cover-letter.md`,
                     })
                   )
@@ -109,8 +119,16 @@ export async function GET(
           send({ status: "FAILED", errorMessage: "Timed out waiting for pipeline to complete" });
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        send({ status: "FAILED", errorMessage: `Server error: ${message}` });
+        const errorId = crypto.randomUUID();
+        console.error("Job stream endpoint failed", {
+          errorId,
+          jobId,
+          err,
+        });
+        send({
+          status: "FAILED",
+          errorMessage: `Server error. Reference ID: ${errorId}`,
+        });
       } finally {
         controller.close();
       }
