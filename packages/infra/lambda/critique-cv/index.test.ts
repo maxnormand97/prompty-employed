@@ -67,7 +67,12 @@ function makeBodyStream(content: string) {
 }
 
 function makeBedrockBody(text: string): Buffer {
-  return Buffer.from(JSON.stringify({ content: [{ text }] }));
+  return Buffer.from(JSON.stringify({ stop_reason: "end_turn", content: [{ text }] }));
+}
+
+// invokeBedrockText prepends "{" to the continuation, so mocks must omit it.
+function makeValidBedrockContinuation(): Buffer {
+  return makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD).slice(1));
 }
 
 function makeClients(): CritiqueCVClients {
@@ -96,7 +101,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
+      body: makeValidBedrockContinuation() as never,
     });
 
     const result = await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -118,7 +123,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
+      body: makeValidBedrockContinuation() as never,
     });
 
     await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -132,7 +137,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
+      body: makeValidBedrockContinuation() as never,
     });
 
     await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -148,7 +153,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
+      body: makeValidBedrockContinuation() as never,
     });
 
     await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -163,7 +168,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
+      body: makeValidBedrockContinuation() as never,
     });
 
     await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -199,7 +204,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeBedrockBody(JSON.stringify({ fitScore: "not-a-number", critiqueNotes: "ok" })) as never,
+      body: makeBedrockBody(JSON.stringify({ ...VALID_CRITIQUE_PAYLOAD, fitScore: 999 }).slice(1)) as never,
     });
 
     await expect(runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV)).rejects.toThrow(

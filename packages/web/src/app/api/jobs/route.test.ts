@@ -8,6 +8,21 @@
  * without starting an HTTP server. This replaces supertest's role for
  * App Router projects and gives the same white-box integration coverage.
  */
+
+// Mock AWS SDK clients so real credentials/network are never needed in tests.
+jest.mock('@aws-sdk/client-s3', () => ({
+  S3Client: jest.fn(() => ({ send: jest.fn().mockResolvedValue({}) })),
+  PutObjectCommand: jest.fn(),
+}));
+jest.mock('@aws-sdk/client-dynamodb', () => ({
+  DynamoDBClient: jest.fn(() => ({ send: jest.fn().mockResolvedValue({}) })),
+  PutItemCommand: jest.fn(),
+}));
+jest.mock('@aws-sdk/client-sfn', () => ({
+  SFNClient: jest.fn(() => ({ send: jest.fn().mockResolvedValue({}) })),
+  StartExecutionCommand: jest.fn(),
+}));
+
 import { NextRequest } from 'next/server';
 import { POST } from './route';
 

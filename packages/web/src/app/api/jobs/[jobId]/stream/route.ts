@@ -108,8 +108,9 @@ export async function GET(
         if (Date.now() - start >= TIMEOUT_MS) {
           send({ status: "FAILED", errorMessage: "Timed out waiting for pipeline to complete" });
         }
-      } catch {
-        send({ status: "FAILED", errorMessage: "An unexpected error occurred." });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        send({ status: "FAILED", errorMessage: `Server error: ${message}` });
       } finally {
         controller.close();
       }

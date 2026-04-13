@@ -1,4 +1,5 @@
 import { CritiqueResult, GapAdvice } from "./types";
+import { log } from "./log";
 
 /**
  * Parse and validate the JSON critique response from Claude.
@@ -9,7 +10,8 @@ export function parseCritiqueResponse(raw: string): CritiqueResult {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error(`Bedrock response was not valid JSON: ${raw.slice(0, 200)}`);
+    log("error", "Bedrock response was not valid JSON", { rawResponse: raw });
+    throw new Error(`Bedrock response was not valid JSON (length=${raw.length})`);
   }
 
   const result = parsed as Record<string, unknown>;

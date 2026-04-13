@@ -53,7 +53,7 @@ function statusToIndex(status: JobStatus): number {
     PENDING: 0,
     DRAFTING: 1,
     CRITIQUE: 2,
-    COMPLETE: 3,
+    COMPLETE: 4, // one past the last step index so all steps show as done
     FAILED: -1,
   };
   return map[status] ?? -1;
