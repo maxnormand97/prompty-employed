@@ -244,4 +244,34 @@ describe("buildDraftPrompt", () => {
     const prompt = buildDraftPrompt("r", "j");
     expect(prompt).toContain("---COVER_LETTER_START---");
   });
+
+  test("instructs model to only use information from the original resume", () => {
+    const prompt = buildDraftPrompt("r", "j");
+    expect(prompt).toMatch(/only use information.*original resume/i);
+  });
+
+  test("instructs model not to invent or fabricate experience or skills", () => {
+    const prompt = buildDraftPrompt("r", "j");
+    expect(prompt).toMatch(/do not invent.*fabricat.*exaggerat/i);
+  });
+
+  test("instructs model not to add the job title as a past experience", () => {
+    const prompt = buildDraftPrompt("r", "j");
+    expect(prompt).toMatch(/do not add the job title.*past.*experience/i);
+  });
+
+  test("instructs model not to claim a missing skill is present", () => {
+    const prompt = buildDraftPrompt("r", "j");
+    expect(prompt).toMatch(/candidate lacks a skill.*do not claim they have it/i);
+  });
+
+  test("instructs model to highlight transferable skills when a required skill is absent", () => {
+    const prompt = buildDraftPrompt("r", "j");
+    expect(prompt).toMatch(/transferable/i);
+  });
+
+  test("instructs model to honestly indicate gaps where experience does not match", () => {
+    const prompt = buildDraftPrompt("r", "j");
+    expect(prompt).toMatch(/gaps/i);
+  });
 });
