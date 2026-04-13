@@ -10,7 +10,7 @@ export function buildDraftPrompt(resume: string, jobDescription: string): string
 Your task is to produce TWO artefacts for the candidate below:
 
 1. A TAILORED CV — rewrite the candidate's master resume so it is closely aligned
-   to the target job description. Output the full CV in clean Markdown.
+   to the target job description. Preserve factual accuracy. Output the full CV in clean Markdown.
 
 2. A COVER LETTER — write a compelling, specific cover letter for this role.
    Reference concrete achievements from the resume. Output in clean Markdown.
