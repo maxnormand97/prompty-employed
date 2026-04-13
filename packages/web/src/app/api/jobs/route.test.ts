@@ -205,10 +205,11 @@ describe('POST /api/jobs', () => {
 
     it('uses the same jobId for S3 keys, DynamoDB record, and SFN execution name', async () => {
       const res = await POST(makeAuthRequest(VALID_PAYLOAD));
-      const { jobId } = await res.json() as { jobId: string };
+      const json: unknown = await res.json();
+      const jobId = (json as { jobId: string }).jobId;
 
       for (const [input] of jest.mocked(PutObjectCommand).mock.calls) {
-        expect((input as { Key: string }).Key).toContain(jobId);
+        expect(input.Key).toContain(jobId);
       }
       expect(jest.mocked(PutItemCommand).mock.calls[0][0]).toMatchObject({
         Item: expect.objectContaining({ jobId: { S: jobId } }),
