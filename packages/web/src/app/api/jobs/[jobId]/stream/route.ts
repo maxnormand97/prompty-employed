@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
-import { MOCK_TAILORED_OUTPUT } from "@/lib/mock-data";
+import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+
+const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION });
+const s3 = new S3Client({ region: process.env.AWS_REGION });
+
+const POLL_INTERVAL_MS = 1500;
+const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes — match state machine timeout
 
 /**
  * GET /api/jobs/[jobId]/stream
  *
- * Server-Sent Events endpoint. Stub: simulates the full pipeline lifecycle
- * with timed transitions so the UI can exercise every status step.
+ * Server-Sent Events endpoint. Polls DynamoDB every 1.5 s and emits a status
+ * event only when the status changes. On COMPLETE, fetches all three S3
+ * artefacts and emits the full TailoredOutput payload.
  *
- * Each message is a JSON-encoded `SSEPayload` object:
+ * Each message is a JSON-encoded SSEPayload:
  *   { status: "PENDING" | "DRAFTING" | "CRITIQUE" }
  *   { status: "COMPLETE"; result: TailoredOutput }
  *   { status: "FAILED"; errorMessage: string }
- *
- * In production this would poll DynamoDB and send real status transitions.
  */
 export async function GET(
   _request: Request,
@@ -27,21 +33,81 @@ export async function GET(
         controller.enqueue(new TextEncoder().encode(chunk));
       };
 
-      const delay = (ms: number) =>
-        new Promise<void>((resolve) => setTimeout(resolve, ms));
+      const start = Date.now();
+      let lastSentStatus: string | null = null;
 
       try {
-        // Simulate the full pipeline lifecycle
-        send({ status: "PENDING" });
-        await delay(800);
+        while (Date.now() - start < TIMEOUT_MS) {
+          const { Item } = await dynamo.send(
+            new GetItemCommand({
+              TableName: process.env.JOBS_TABLE_NAME,
+              Key: { jobId: { S: jobId } },
+            })
+          );
 
-        send({ status: "DRAFTING" });
-        await delay(3500);
+          if (!Item) {
+            send({ status: "FAILED", errorMessage: "Job not found" });
+            break;
+          }
 
-        send({ status: "CRITIQUE" });
-        await delay(3000);
+          const status = Item.status?.S ?? "PENDING";
 
-        send({ status: "COMPLETE", result: { ...MOCK_TAILORED_OUTPUT, jobId } });
+          if (status !== lastSentStatus) {
+            if (status === "COMPLETE") {
+              // Fetch all three artefacts in parallel
+              const [analysisRaw, tailoredCV, coverLetter] = await Promise.all([
+                s3
+                  .send(
+                    new GetObjectCommand({
+                      Bucket: process.env.RESULTS_BUCKET_NAME,
+                      Key: `results/${jobId}/analysis.json`,
+                    })
+                  )
+                  .then((r) => r.Body!.transformToString("utf-8")),
+                s3
+                  .send(
+                    new GetObjectCommand({
+                      Bucket: process.env.RESULTS_BUCKET_NAME,
+                      Key: `results/${jobId}/tailored-cv.md`,
+                    })
+                  )
+                  .then((r) => r.Body!.transformToString("utf-8")),
+                s3
+                  .send(
+                    new GetObjectCommand({
+                      Bucket: process.env.RESULTS_BUCKET_NAME,
+                      Key: `results/${jobId}/cover-letter.md`,
+                    })
+                  )
+                  .then((r) => r.Body!.transformToString("utf-8")),
+              ]);
+
+              const analysis = JSON.parse(analysisRaw);
+              send({
+                status: "COMPLETE",
+                result: { ...analysis, tailoredCV, coverLetter, jobId },
+              });
+              break;
+            } else if (status === "FAILED") {
+              send({
+                status: "FAILED",
+                errorMessage: Item.errorMessage?.S ?? "Pipeline failed",
+              });
+              break;
+            } else {
+              // PENDING, DRAFTING, CRITIQUE
+              send({ status });
+            }
+
+            lastSentStatus = status;
+          }
+
+          await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        }
+
+        if (Date.now() - start >= TIMEOUT_MS) {
+          send({ status: "FAILED", errorMessage: "Timed out waiting for pipeline to complete" });
+        }
       } catch {
         send({ status: "FAILED", errorMessage: "An unexpected error occurred." });
       } finally {

@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
+
+const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION });
 
 /**
  * GET /api/jobs/[jobId]
  *
- * Stub: returns a COMPLETE job record with mock data.
- * In production this reads from DynamoDB + S3.
+ * Returns the current status of a job from DynamoDB.
  */
 export async function GET(
   _request: Request,
@@ -12,6 +14,20 @@ export async function GET(
 ) {
   const { jobId } = await params;
 
-  // Stub — always return COMPLETE so the polling path works during development.
-  return NextResponse.json({ jobId, status: "COMPLETE" });
+  const { Item } = await dynamo.send(
+    new GetItemCommand({
+      TableName: process.env.JOBS_TABLE_NAME,
+      Key: { jobId: { S: jobId } },
+    })
+  );
+
+  if (!Item) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({
+    jobId,
+    status: Item.status?.S ?? "PENDING",
+    ...(Item.errorMessage?.S ? { errorMessage: Item.errorMessage.S } : {}),
+  });
 }
