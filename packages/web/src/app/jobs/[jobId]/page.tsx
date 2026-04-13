@@ -53,7 +53,7 @@ function statusToIndex(status: JobStatus): number {
     PENDING: 0,
     DRAFTING: 1,
     CRITIQUE: 2,
-    COMPLETE: 3,
+    COMPLETE: STEPS.length, // one past the last step index so all steps show as done
     FAILED: -1,
   };
   return map[status] ?? -1;
@@ -241,7 +241,7 @@ export default function JobPage() {
         <p className="sr-only" aria-live="polite" aria-atomic="true">
           {isFailed
             ? `Error: ${errorMessage}`
-            : `Current step: ${STEPS[Math.max(0, currentIndex)]?.label ?? status}`}
+            : `Current step: ${STEPS[Math.min(Math.max(0, currentIndex), STEPS.length - 1)]?.label ?? status}`}
         </p>
         <p className="text-sm text-muted-foreground font-mono">
           Job ID: {jobId}

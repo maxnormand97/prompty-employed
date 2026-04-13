@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
+import { S3Client, PutObjectCommand, DeleteObjectsCommand } from "@aws-sdk/client-s3";
+import { DynamoDBClient, PutItemCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
+import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { JobSubmissionSchema } from "@/lib/types";
+
+const s3 = new S3Client({ region: process.env.AWS_REGION });
+const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION });
+const sfn = new SFNClient({ region: process.env.AWS_REGION });
 
 /**
  * POST /api/jobs
  *
- * Stub: Validates the submission payload and returns a new jobId.
- * In production this triggers S3 uploads and a Step Functions execution.
+ * Validates the submission payload, uploads inputs to S3, writes a PENDING
+ * DynamoDB record, and starts the Step Functions execution.
  */
 export async function POST(request: NextRequest) {
   const apiKey = request.headers.get("x-internal-api-key");
@@ -26,6 +33,18 @@ export async function POST(request: NextRequest) {
   // INTERNAL_API_KEY unset intentionally bypasses this check for easier setup.
   if (expectedKey && apiKey !== expectedKey) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Validate required AWS environment variables before making any SDK calls.
+  const awsRegion = process.env.AWS_REGION;
+  const bucketName = process.env.RESULTS_BUCKET_NAME;
+  const tableName = process.env.JOBS_TABLE_NAME;
+  const stateMachineArn = process.env.STATE_MACHINE_ARN;
+  if (!awsRegion || !bucketName || !tableName || !stateMachineArn) {
+    return NextResponse.json(
+      { error: "Server misconfigured: missing required AWS environment variables" },
+      { status: 500 }
+    );
   }
 
   let body: unknown;
@@ -49,8 +68,84 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Stub: generate a job ID — no AWS calls yet.
   const jobId = uuidv4();
+  const s3ResumeKey = `inputs/${jobId}/resume.txt`;
+  const s3JobDescKey = `inputs/${jobId}/job-desc.txt`;
+
+  // 1. Upload raw inputs to S3
+  await Promise.all([
+    s3.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: s3ResumeKey,
+        Body: parsed.data.masterResume,
+        ContentType: "text/plain; charset=utf-8",
+      })
+    ),
+    s3.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: s3JobDescKey,
+        Body: parsed.data.jobDescription,
+        ContentType: "text/plain; charset=utf-8",
+      })
+    ),
+  ]);
+
+  // 2. Create a PENDING record in DynamoDB
+  await dynamo.send(
+    new PutItemCommand({
+      TableName: tableName,
+      Item: {
+        jobId: { S: jobId },
+        status: { S: "PENDING" },
+        submittedAt: { S: new Date().toISOString() },
+      },
+    })
+  );
+
+  // 3. Start the Step Functions execution — jobId is used as the execution name
+  // for a stable, human-readable correlation identifier (not for request idempotency,
+  // as a new UUID is generated on each call).
+  try {
+    await sfn.send(
+      new StartExecutionCommand({
+        stateMachineArn,
+        name: jobId,
+        input: JSON.stringify({ jobId, s3ResumeKey, s3JobDescKey }),
+      })
+    );
+  } catch (err) {
+    // SFN failed after S3 and DynamoDB succeeded — mark the job FAILED and
+    // clean up the uploaded S3 inputs so nothing is left orphaned.
+    console.error("Failed to start Step Functions execution", { jobId, err });
+    await Promise.allSettled([
+      dynamo.send(
+        new UpdateItemCommand({
+          TableName: tableName,
+          Key: { jobId: { S: jobId } },
+          UpdateExpression: "SET #s = :s, errorMessage = :e",
+          ExpressionAttributeNames: { "#s": "status" },
+          ExpressionAttributeValues: {
+            ":s": { S: "FAILED" },
+            ":e": { S: "Failed to start pipeline execution" },
+          },
+        })
+      ),
+      s3.send(
+        new DeleteObjectsCommand({
+          Bucket: bucketName,
+          Delete: {
+            Objects: [{ Key: s3ResumeKey }, { Key: s3JobDescKey }],
+          },
+        })
+      ),
+    ]);
+    return NextResponse.json(
+      { error: "Failed to start pipeline execution" },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({ jobId }, { status: 201 });
 }
