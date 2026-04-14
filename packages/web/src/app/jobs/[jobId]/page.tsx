@@ -369,7 +369,25 @@ export default function JobPage() {
             </p>
           </div>
 
-          {/* ── A: Tailored CV ──────────────────────────────────────── */}
+          {/* ── A: Company & Role Brief ─────────────────────────── */}
+          {result.companySummary && (
+            <Card className="border-violet-500/30 bg-violet-500/5">
+              <CardHeader className="pb-3">
+                <CardTitle>Company & Role Brief</CardTitle>
+                <CardDescription>
+                  Key things to keep in mind as you prepare your application and interviews.
+                </CardDescription>
+              </CardHeader>
+              <Separator />
+              <CardContent className="pt-5">
+                <p className="text-base text-muted-foreground leading-relaxed">
+                  {result.companySummary}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── B: Tailored CV ──────────────────────────────────────── */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
               <div>
@@ -398,7 +416,7 @@ export default function JobPage() {
             </CardContent>
           </Card>
 
-          {/* ── B: Cover Letter ─────────────────────────────────────── */}
+          {/* ── C: Cover Letter ─────────────────────────────────────── */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
               <div>
@@ -427,7 +445,7 @@ export default function JobPage() {
             </CardContent>
           </Card>
 
-          {/* ── C: Scorecard ────────────────────────────────────────── */}
+          {/* ── D: Scorecard ────────────────────────────────────────── */}
           <Card>
             <CardHeader>
               <CardTitle>Application Scorecard</CardTitle>
@@ -489,7 +507,7 @@ export default function JobPage() {
             </CardContent>
           </Card>
 
-          {/* ── D: Gap Analysis ─────────────────────────────────────── */}
+          {/* ── E: Gap Analysis ─────────────────────────────────────── */}
           <Card>
             <CardHeader>
               <CardTitle>Gap Analysis</CardTitle>

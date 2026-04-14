@@ -11,10 +11,12 @@ const RESUME_MIN = 200;
 const RESUME_MAX = 15000;
 const JD_MIN = 50;
 const JD_MAX = 15000;
+const COMPANY_MAX = 5000;
 
 interface FieldErrors {
   masterResume?: string;
   jobDescription?: string;
+  companyInfo?: string;
   form?: string;
 }
 
@@ -23,17 +25,18 @@ export default function HomePage() {
 
   const [masterResume, setMasterResume] = useState("");
   const [jobDescription, setJobDescription] = useState("");
+  const [companyInfo, setCompanyInfo] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
 
   function validate(): FieldErrors {
-    const result = JobSubmissionSchema.safeParse({ masterResume, jobDescription });
+    const result = JobSubmissionSchema.safeParse({ masterResume, jobDescription, companyInfo: companyInfo || undefined });
     if (result.success) return {};
 
     const errs: FieldErrors = {};
     for (const issue of result.error.issues) {
       const field = issue.path[0] as keyof FieldErrors;
-      if (field === "masterResume" || field === "jobDescription") {
+      if (field === "masterResume" || field === "jobDescription" || field === "companyInfo") {
         errs[field] = issue.message;
       }
     }
@@ -55,7 +58,7 @@ export default function HomePage() {
       const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ masterResume, jobDescription }),
+        body: JSON.stringify({ masterResume, jobDescription, ...(companyInfo ? { companyInfo } : {}) }),
       });
 
       if (!res.ok) {
@@ -78,6 +81,7 @@ export default function HomePage() {
 
   const resumeCount = masterResume.length;
   const jdCount = jobDescription.length;
+  const companyCount = companyInfo.length;
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-4 py-16">
@@ -195,6 +199,51 @@ export default function HomePage() {
             {errors.jobDescription && (
               <p id="jd-error" className="text-base text-destructive" role="alert">
                 {errors.jobDescription}
+              </p>
+            )}
+          </div>
+
+          {/* Company Information (optional) */}
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <label
+                htmlFor="companyInfo"
+                className="text-sm font-medium text-foreground"
+              >
+                Company Information
+                <span className="ml-2 text-xs font-normal text-muted-foreground">(optional)</span>
+              </label>
+              <span
+                className={`text-sm tabular-nums ${
+                  companyCount > COMPANY_MAX
+                    ? "text-destructive"
+                    : companyCount > 0
+                    ? "text-emerald-400"
+                    : "text-muted-foreground"
+                }`}
+              >
+                {companyCount.toLocaleString()} / {COMPANY_MAX.toLocaleString()}
+              </span>
+            </div>
+            <Textarea
+              id="companyInfo"
+              name="companyInfo"
+              placeholder="Add anything you know about the company — their mission, recent news, tech stack, culture, or why you want to work there. This helps personalise the cover letter and brief."
+              value={companyInfo}
+              onChange={(e) => {
+                setCompanyInfo(e.target.value);
+                if (errors.companyInfo)
+                  setErrors((p) => ({ ...p, companyInfo: undefined }));
+              }}
+              rows={5}
+              className="resize-y font-mono text-base leading-relaxed"
+              aria-describedby={errors.companyInfo ? "company-error" : undefined}
+              aria-invalid={!!errors.companyInfo}
+              disabled={submitting}
+            />
+            {errors.companyInfo && (
+              <p id="company-error" className="text-base text-destructive" role="alert">
+                {errors.companyInfo}
               </p>
             )}
           </div>

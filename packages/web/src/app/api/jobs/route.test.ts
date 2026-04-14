@@ -249,4 +249,59 @@ describe('POST /api/jobs', () => {
       );
     });
   });
+
+  describe('companyInfo — optional field', () => {
+    const PAYLOAD_WITH_COMPANY = {
+      ...VALID_PAYLOAD,
+      companyInfo: 'Acme Corp — builds best-in-class DevOps tooling.',
+    };
+
+    it('returns 201 when companyInfo is included in the payload', async () => {
+      const res = await POST(makeAuthRequest(PAYLOAD_WITH_COMPANY));
+      expect(res.status).toBe(201);
+    });
+
+    it('uploads 3 S3 objects (resume + job desc + company info) when companyInfo is provided', async () => {
+      await POST(makeAuthRequest(PAYLOAD_WITH_COMPANY));
+      expect(jest.mocked(PutObjectCommand)).toHaveBeenCalledTimes(3);
+    });
+
+    it('uploads only 2 S3 objects when companyInfo is absent', async () => {
+      await POST(makeAuthRequest(VALID_PAYLOAD));
+      expect(jest.mocked(PutObjectCommand)).toHaveBeenCalledTimes(2);
+    });
+
+    it('passes s3CompanyInfoKey in Step Functions input when companyInfo is provided', async () => {
+      await POST(makeAuthRequest(PAYLOAD_WITH_COMPANY));
+      const sfnCall = jest.mocked(StartExecutionCommand).mock.calls[0][0];
+      const sfnInput = JSON.parse(sfnCall.input as string) as Record<string, unknown>;
+      expect(sfnInput).toHaveProperty('s3CompanyInfoKey');
+      expect(typeof sfnInput.s3CompanyInfoKey).toBe('string');
+    });
+
+    it('does not pass s3CompanyInfoKey in Step Functions input when companyInfo is absent', async () => {
+      await POST(makeAuthRequest(VALID_PAYLOAD));
+      const sfnCall = jest.mocked(StartExecutionCommand).mock.calls[0][0];
+      const sfnInput = JSON.parse(sfnCall.input as string) as Record<string, unknown>;
+      expect(sfnInput).not.toHaveProperty('s3CompanyInfoKey');
+    });
+
+    it('rejects companyInfo exceeding 5 000 characters', async () => {
+      const res = await POST(
+        makeAuthRequest({ ...VALID_PAYLOAD, companyInfo: 'X'.repeat(5001) })
+      );
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.issues[0].field).toBe('companyInfo');
+    });
+
+    it('deletes company info S3 object when StartExecution fails', async () => {
+      sfnSend.mockRejectedValue(new Error('SFN unavailable'));
+      await POST(makeAuthRequest(PAYLOAD_WITH_COMPANY));
+      const deleteCall = jest.mocked(DeleteObjectsCommand).mock.calls[0][0];
+      const objects = (deleteCall as { Delete: { Objects: { Key: string }[] } }).Delete.Objects;
+      const keys = objects.map((o) => o.Key);
+      expect(keys.some((k) => k.includes('company-info'))).toBe(true);
+    });
+  });
 });

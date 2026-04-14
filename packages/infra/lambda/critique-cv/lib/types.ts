@@ -7,6 +7,7 @@ export interface CritiqueCVInput {
   s3TailoredCVKey: string;
   s3CoverLetterKey: string;
   s3JobDescKey: string;
+  s3CompanyInfoKey?: string;
 }
 
 export interface CritiqueCVOutput {
@@ -18,6 +19,7 @@ export interface CritiqueCVOutput {
   likelihoodRationale: string;
   suggestedImprovements: string[];
   gapAnalysis: GapAdvice[];
+  companySummary?: string;
 }
 
 export interface GapAdvice {
@@ -34,6 +36,7 @@ export interface CritiqueResult {
   likelihoodRationale: string;
   suggestedImprovements: string[];
   gapAnalysis: GapAdvice[];
+  companySummary?: string;
 }
 
 export interface CritiqueCVClients {

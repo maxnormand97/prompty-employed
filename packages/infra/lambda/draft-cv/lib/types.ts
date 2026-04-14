@@ -8,6 +8,7 @@ export interface DraftCVInput {
   jobId: string;
   s3ResumeKey: string;
   s3JobDescKey: string;
+  s3CompanyInfoKey?: string;
 }
 
 export interface DraftCVOutput {
@@ -15,6 +16,7 @@ export interface DraftCVOutput {
   s3TailoredCVKey: string;
   s3CoverLetterKey: string;
   s3JobDescKey: string;
+  s3CompanyInfoKey?: string;
 }
 
 export interface DraftCVClients {

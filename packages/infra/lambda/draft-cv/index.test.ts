@@ -244,4 +244,101 @@ describe("buildDraftPrompt", () => {
     const prompt = buildDraftPrompt("r", "j");
     expect(prompt).toContain("---COVER_LETTER_START---");
   });
+
+  test("contains the STRICT RULES anti-hallucination section", () => {
+    const prompt = buildDraftPrompt("r", "j");
+    expect(prompt).toContain("STRICT RULES");
+    expect(prompt).toContain("Do NOT invent");
+    expect(prompt).toContain("Do NOT add the job title being applied for");
+  });
+
+  test("contains the internal analysis step instruction", () => {
+    const prompt = buildDraftPrompt("r", "j");
+    expect(prompt).toContain("STEP 1");
+    expect(prompt).toContain("ANALYSIS");
+  });
+
+  test("includes company info in XML tags when provided", () => {
+    const prompt = buildDraftPrompt("MY RESUME", "MY JOB DESC", "Acme Corp — builds widgets");
+    expect(prompt).toContain("<company_info>\nAcme Corp — builds widgets\n</company_info>");
+  });
+
+  test("does not include company_info XML section when omitted", () => {
+    const prompt = buildDraftPrompt("MY RESUME", "MY JOB DESC");
+    expect(prompt).not.toContain("<company_info>");
+  });
+
+  test("includes company-specific cover letter instruction when company info provided", () => {
+    const prompt = buildDraftPrompt("r", "j", "Company XYZ");
+    expect(prompt).toContain("company information provided");
+  });
+});
+
+// ── runDraftCV with company info ───────────────────────────────────────────
+
+describe("runDraftCV — company info", () => {
+  const COMPANY_INFO_TEXT = "Acme Corp — a fast-growing SaaS company focused on DevOps tooling.";
+  const EVENT_WITH_COMPANY: DraftCVInput = {
+    ...MOCK_EVENT,
+    s3CompanyInfoKey: "inputs/test-job-001/company-info.txt",
+  };
+
+  test("fetches company info from S3 when s3CompanyInfoKey is provided", async () => {
+    s3Mock
+      .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3ResumeKey })
+      .resolves({ Body: makeBodyStream(RESUME_TEXT) as never })
+      .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3JobDescKey })
+      .resolves({ Body: makeBodyStream(JOB_DESC_TEXT) as never })
+      .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3CompanyInfoKey })
+      .resolves({ Body: makeBodyStream(COMPANY_INFO_TEXT) as never });
+    s3Mock.on(PutObjectCommand).resolves({});
+    dynamoMock.on(UpdateItemCommand).resolves({});
+    bedrockMock.on(InvokeModelCommand).resolves({
+      body: makeBedrockBody(`${TAILORED_CV_TEXT}\n${DELIMITER}\n${COVER_LETTER_TEXT}`) as never,
+    });
+
+    await runDraftCV(EVENT_WITH_COMPANY, makeClients(), MOCK_ENV);
+
+    const getCalls = s3Mock.commandCalls(GetObjectCommand);
+    const fetchedKeys = getCalls.map((c) => c.args[0].input.Key);
+    expect(fetchedKeys).toContain(EVENT_WITH_COMPANY.s3CompanyInfoKey);
+  });
+
+  test("includes s3CompanyInfoKey in output when provided", async () => {
+    s3Mock
+      .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3ResumeKey })
+      .resolves({ Body: makeBodyStream(RESUME_TEXT) as never })
+      .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3JobDescKey })
+      .resolves({ Body: makeBodyStream(JOB_DESC_TEXT) as never })
+      .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3CompanyInfoKey })
+      .resolves({ Body: makeBodyStream(COMPANY_INFO_TEXT) as never });
+    s3Mock.on(PutObjectCommand).resolves({});
+    dynamoMock.on(UpdateItemCommand).resolves({});
+    bedrockMock.on(InvokeModelCommand).resolves({
+      body: makeBedrockBody(`${TAILORED_CV_TEXT}\n${DELIMITER}\n${COVER_LETTER_TEXT}`) as never,
+    });
+
+    const result = await runDraftCV(EVENT_WITH_COMPANY, makeClients(), MOCK_ENV);
+
+    expect(result.s3CompanyInfoKey).toBe(EVENT_WITH_COMPANY.s3CompanyInfoKey);
+  });
+
+  test("does not attempt to fetch company info when s3CompanyInfoKey is absent", async () => {
+    s3Mock
+      .on(GetObjectCommand, { Key: MOCK_EVENT.s3ResumeKey })
+      .resolves({ Body: makeBodyStream(RESUME_TEXT) as never })
+      .on(GetObjectCommand, { Key: MOCK_EVENT.s3JobDescKey })
+      .resolves({ Body: makeBodyStream(JOB_DESC_TEXT) as never });
+    s3Mock.on(PutObjectCommand).resolves({});
+    dynamoMock.on(UpdateItemCommand).resolves({});
+    bedrockMock.on(InvokeModelCommand).resolves({
+      body: makeBedrockBody(`${TAILORED_CV_TEXT}\n${DELIMITER}\n${COVER_LETTER_TEXT}`) as never,
+    });
+
+    await runDraftCV(MOCK_EVENT, makeClients(), MOCK_ENV);
+
+    // Only resume + job desc should be read (2 GetObject calls)
+    const getCalls = s3Mock.commandCalls(GetObjectCommand);
+    expect(getCalls).toHaveLength(2);
+  });
 });

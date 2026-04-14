@@ -16,7 +16,7 @@ export async function runCritiqueCV(
   clients: CritiqueCVClients,
   env: CritiqueCVEnv
 ): Promise<CritiqueCVOutput> {
-  const { jobId, s3TailoredCVKey, s3CoverLetterKey, s3JobDescKey } = event;
+  const { jobId, s3TailoredCVKey, s3CoverLetterKey, s3JobDescKey, s3CompanyInfoKey } = event;
   const { s3, dynamo, bedrock } = clients;
   const { bedrockModelId, jobsTableName, resultsBucketName } = env;
 
@@ -25,6 +25,7 @@ export async function runCritiqueCV(
     s3TailoredCVKey,
     s3CoverLetterKey,
     s3JobDescKey,
+    s3CompanyInfoKey,
     bedrockModelId,
     jobsTableName,
     resultsBucketName,
@@ -36,20 +37,24 @@ export async function runCritiqueCV(
   try {
     // 2. Fetch all artefacts from S3
     log("info", "Fetching S3 artefacts", { jobId });
-    const [tailoredCV, coverLetter, jobDescription] = await Promise.all([
+    const [tailoredCV, coverLetter, jobDescription, companyInfo] = await Promise.all([
       readS3Object(s3, resultsBucketName, s3TailoredCVKey),
       readS3Object(s3, resultsBucketName, s3CoverLetterKey),
       readS3Object(s3, resultsBucketName, s3JobDescKey),
+      s3CompanyInfoKey
+        ? readS3Object(s3, resultsBucketName, s3CompanyInfoKey)
+        : Promise.resolve(undefined),
     ]);
     log("info", "S3 artefacts fetched", {
       jobId,
       tailoredCVLength: tailoredCV.length,
       coverLetterLength: coverLetter.length,
       jobDescLength: jobDescription.length,
+      companyInfoLength: companyInfo?.length ?? 0,
     });
 
     // 3. Build prompt and call Bedrock
-    const prompt = buildCritiquePrompt(tailoredCV, coverLetter, jobDescription);
+    const prompt = buildCritiquePrompt(tailoredCV, coverLetter, jobDescription, companyInfo);
     const rawResponse = await invokeBedrockText(bedrock, bedrockModelId, prompt);
 
     // 4. Parse and validate the response
@@ -88,6 +93,7 @@ export async function runCritiqueCV(
       likelihoodRationale: result.likelihoodRationale,
       suggestedImprovements: result.suggestedImprovements,
       gapAnalysis: result.gapAnalysis,
+      companySummary: result.companySummary,
     };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);

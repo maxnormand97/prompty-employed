@@ -12,7 +12,7 @@ export async function runDraftCV(
   clients: DraftCVClients,
   env: DraftCVEnv
 ): Promise<DraftCVOutput> {
-  const { jobId, s3ResumeKey, s3JobDescKey } = event;
+  const { jobId, s3ResumeKey, s3JobDescKey, s3CompanyInfoKey } = event;
   const { s3, dynamo, bedrock } = clients;
   const { bedrockModelId, jobsTableName, resultsBucketName } = env;
 
@@ -20,6 +20,7 @@ export async function runDraftCV(
     jobId,
     s3ResumeKey,
     s3JobDescKey,
+    s3CompanyInfoKey,
     bedrockModelId,
     jobsTableName,
     resultsBucketName,
@@ -31,18 +32,22 @@ export async function runDraftCV(
   try {
     // 2. Fetch resume and job description text from S3
     log("info", "Fetching S3 artefacts", { jobId });
-    const [resume, jobDescription] = await Promise.all([
+    const [resume, jobDescription, companyInfo] = await Promise.all([
       readS3Object(s3, resultsBucketName, s3ResumeKey),
       readS3Object(s3, resultsBucketName, s3JobDescKey),
+      s3CompanyInfoKey
+        ? readS3Object(s3, resultsBucketName, s3CompanyInfoKey)
+        : Promise.resolve(undefined),
     ]);
     log("info", "S3 artefacts fetched", {
       jobId,
       resumeLength: resume.length,
       jobDescLength: jobDescription.length,
+      companyInfoLength: companyInfo?.length ?? 0,
     });
 
     // 3. Build prompt and call Bedrock
-    const prompt = buildDraftPrompt(resume, jobDescription);
+    const prompt = buildDraftPrompt(resume, jobDescription, companyInfo);
     const rawResponse = await invokeBedrockText(bedrock, bedrockModelId, prompt);
 
     // 4. Split response on delimiter
@@ -77,7 +82,7 @@ export async function runDraftCV(
     log("info", "runDraftCV complete", { jobId, s3TailoredCVKey, s3CoverLetterKey });
 
     // 6. Return S3 keys for the next Step Function state
-    return { jobId, s3TailoredCVKey, s3CoverLetterKey, s3JobDescKey };
+    return { jobId, s3TailoredCVKey, s3CoverLetterKey, s3JobDescKey, s3CompanyInfoKey };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : undefined;
