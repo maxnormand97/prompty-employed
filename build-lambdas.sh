@@ -1,50 +1,110 @@
 #!/usr/bin/env bash
-set -e
+# build-lambdas.sh — Compile and package Lambda functions for deployment.
+#
+# Usage:
+#   ./build-lambdas.sh                  # packages all lambdas
+#   ./build-lambdas.sh draft-cv         # packages a single lambda
+#   OUT_DIR=/tmp/lambdas ./build-lambdas.sh  # override output directory
+#
+# The handler in AWS must be set to: index.handler
+# (compiled index.js is placed at the zip root, not inside dist/)
 
-DESKTOP="/home/max-normand/Desktop"
-ROOT="/home/max-normand/projects/prompty-employed/packages/infra/lambda"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$SCRIPT_DIR/packages/infra/lambda"
+OUT_DIR="${OUT_DIR:-"$HOME/Desktop"}"
+VERSION="${VERSION:-v2}"
+
+# Guard: required tools
+for cmd in node npm zip; do
+  if ! command -v "$cmd" &>/dev/null; then
+    echo "ERROR: required command '$cmd' not found" >&2
+    exit 1
+  fi
+done
 
 package_lambda() {
-  local name="$1"          # e.g. draft-cv
+  local name="$1"
   local dir="$ROOT/$name"
+
+  if [[ ! -d "$dir" ]]; then
+    echo "ERROR: lambda directory not found: $dir" >&2
+    return 1
+  fi
+
+  echo "=== [$name] Compiling TypeScript ==="
+  # Use the lambda's own local tsc binary to avoid version mismatches
+  local tsc_bin="$dir/node_modules/.bin/tsc"
+  if [[ ! -x "$tsc_bin" ]]; then
+    echo "ERROR: tsc not found at $tsc_bin — run 'pnpm install' first" >&2
+    return 1
+  fi
+  (cd "$dir" && "$tsc_bin" --project tsconfig.json)
+
+  echo "=== [$name] Staging production build ==="
   local staging
   staging=$(mktemp -d)
+  # Ensure staging dir is always cleaned up, even on error
+  trap 'rm -rf "$staging"' RETURN
 
-  echo "=== Packaging $name ==="
-
-  # Copy only production compiled files (exclude dev.js and *.test.js)
-  mkdir -p "$staging/dist/lib"
+  # Copy compiled JS to zip root (not dist/) so Lambda can find index.handler.
+  # Exclude dev.js and *.test.js — they are not needed at runtime.
+  mkdir -p "$staging/lib"
   for f in "$dir/dist/"*.js; do
+    local base
     base=$(basename "$f")
     [[ "$base" == *.test.js ]] && continue
-    [[ "$base" == "dev.js" ]] && continue
-    cp "$f" "$staging/dist/"
+    [[ "$base" == "dev.js" ]]  && continue
+    cp "$f" "$staging/"
   done
-  cp "$dir/dist/lib/"*.js "$staging/dist/lib/"
+  cp "$dir/dist/lib/"*.js "$staging/lib/"
 
-  # Install prod-only dependencies (deps-only package.json, no devDependencies key)
+  # Generate a deps-only package.json (no devDependencies key) so npm install
+  # cannot accidentally pull in test tooling.
   node -e "
     const pkg = require('$dir/package.json');
     const prod = { dependencies: pkg.dependencies || {} };
     require('fs').writeFileSync('$staging/package.json', JSON.stringify(prod, null, 2));
   "
-  cd "$staging"
-  npm install --no-package-lock --ignore-scripts --silent
 
-  # Zip into Desktop
-  local out="$DESKTOP/${name}-v2.zip"
+  echo "=== [$name] Installing production dependencies ==="
+  (cd "$staging" && npm install --no-package-lock --ignore-scripts --silent)
+
+  # Sanity check: ensure no dev packages made it in
+  for dev_pkg in jest babel ts-node istanbul typescript; do
+    if [[ -d "$staging/node_modules/$dev_pkg" ]]; then
+      echo "ERROR: dev package '$dev_pkg' found in production bundle — aborting" >&2
+      return 1
+    fi
+  done
+
+  echo "=== [$name] Creating zip ==="
+  mkdir -p "$OUT_DIR"
+  local out="$OUT_DIR/${name}-${VERSION}.zip"
   rm -f "$out"
-  zip -r "$out" dist/ node_modules/ --quiet
-  echo "Created: $out ($(du -sh "$out" | cut -f1))"
+  # Zip from staging root so index.js lands at the root of the archive
+  (cd "$staging" && zip -r "$out" . --exclude "package.json" --quiet)
 
-  # Cleanup staging
-  rm -rf "$staging"
-  cd "$ROOT"
+  local size
+  size=$(du -sh "$out" | cut -f1)
+  echo "Created: $out ($size)"
+  echo "  Handler: index.handler"
+  echo "  Runtime: nodejs20.x (or nodejs22.x)"
 }
 
-package_lambda "draft-cv"
-package_lambda "critique-cv"
+# Run for specified lambda(s), or all if none given
+LAMBDAS=("${@:-draft-cv critique-cv}")
+if [[ $# -gt 0 ]]; then
+  LAMBDAS=("$@")
+else
+  LAMBDAS=(draft-cv critique-cv)
+fi
+
+for lambda in "${LAMBDAS[@]}"; do
+  package_lambda "$lambda"
+done
 
 echo ""
-echo "Done. Lambdas on Desktop:"
-ls -lh "$DESKTOP/"*-v2.zip
+echo "Done. Lambdas in $OUT_DIR:"
+ls -lh "$OUT_DIR/"*-"${VERSION}".zip

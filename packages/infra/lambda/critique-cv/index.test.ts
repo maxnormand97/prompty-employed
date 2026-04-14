@@ -101,7 +101,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeValidBedrockContinuation() as never,
+      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
     });
 
     const result = await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -123,7 +123,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeValidBedrockContinuation() as never,
+      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
     });
 
     await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -137,7 +137,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeValidBedrockContinuation() as never,
+      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
     });
 
     await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -153,7 +153,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeValidBedrockContinuation() as never,
+      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
     });
 
     await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -168,7 +168,7 @@ describe("runCritiqueCV", () => {
     setupDefaultS3Mocks();
     dynamoMock.on(UpdateItemCommand).resolves({});
     bedrockMock.on(InvokeModelCommand).resolves({
-      body: makeValidBedrockContinuation() as never,
+      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
     });
 
     await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
@@ -341,15 +341,14 @@ describe("buildCritiquePrompt", () => {
     expect(prompt).toContain('"suggestedImprovements"');
   });
 
-
   test("instructs model to output companySummary field", () => {
     const prompt = buildCritiquePrompt("cv", "letter", "job");
     expect(prompt).toContain('"companySummary"');
   });
 
   test("includes company info in XML tags when provided", () => {
-    const prompt = buildCritiquePrompt("cv", "letter", "job", "Acme Corp builds widgets");
-    expect(prompt).toContain("<company_info>\nAcme Corp builds widgets\n</company_info>");
+    const prompt = buildCritiquePrompt("cv", "letter", "job", "Acme Corp — builds widgets");
+    expect(prompt).toContain("<company_info>\nAcme Corp — builds widgets\n</company_info>");
   });
 
   test("does not include company_info XML section when omitted", () => {
@@ -359,13 +358,13 @@ describe("buildCritiquePrompt", () => {
 
   test("instructs model to penalise inflated skill claims in CV", () => {
     const prompt = buildCritiquePrompt("cv", "letter", "job");
-    expect(prompt).toContain("Penalise");
+    expect(prompt).toContain("Score the underlying");
   });
 });
 
-// -- runCritiqueCV with company info --
+// ── runCritiqueCV with company info ────────────────────────────────────────
 
-const COMPANY_INFO_TEXT = "Acme Corp DevOps SaaS values are speed reliability simplicity.";
+const COMPANY_INFO_TEXT = "Acme Corp — DevOps SaaS; values are speed, reliability, simplicity.";
 const EVENT_WITH_COMPANY: CritiqueCVInput = {
   ...MOCK_EVENT,
   s3CompanyInfoKey: "inputs/test-job-001/company-info.txt",
@@ -375,7 +374,7 @@ const VALID_CRITIQUE_WITH_SUMMARY = {
   companySummary: "Acme Corp is a DevOps-focused SaaS company. Emphasise reliability experience.",
 };
 
-describe("runCritiqueCV \u2014 company info", () => {
+describe("runCritiqueCV — company info", () => {
   function setupS3WithCompany() {
     s3Mock
       .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3TailoredCVKey })
@@ -384,7 +383,7 @@ describe("runCritiqueCV \u2014 company info", () => {
       .resolves({ Body: makeBodyStream(MOCK_COVER_LETTER) as never })
       .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3JobDescKey })
       .resolves({ Body: makeBodyStream(MOCK_JOB_DESC) as never })
-      .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3CompanyInfoKey as string })
+      .on(GetObjectCommand, { Key: EVENT_WITH_COMPANY.s3CompanyInfoKey })
       .resolves({ Body: makeBodyStream(COMPANY_INFO_TEXT) as never });
     s3Mock.on(PutObjectCommand).resolves({});
   }
@@ -424,14 +423,15 @@ describe("runCritiqueCV \u2014 company info", () => {
 
     await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
 
+    // Only tailored CV + cover letter + job desc should be read (3 GetObject calls)
     const getCalls = s3Mock.commandCalls(GetObjectCommand);
     expect(getCalls).toHaveLength(3);
   });
 });
 
-// -- parseCritiqueResponse companySummary --
+// ── parseCritiqueResponse — companySummary ─────────────────────────────────
 
-describe("parseCritiqueResponse \u2014 companySummary", () => {
+describe("parseCritiqueResponse — companySummary", () => {
   test("parses companySummary when present in response", () => {
     const result = parseCritiqueResponse(JSON.stringify(VALID_CRITIQUE_WITH_SUMMARY));
     expect(result.companySummary).toBe(VALID_CRITIQUE_WITH_SUMMARY.companySummary);
@@ -442,7 +442,7 @@ describe("parseCritiqueResponse \u2014 companySummary", () => {
     expect(result.companySummary).toBeUndefined();
   });
 
-  test("returns undefined companySummary when field is empty whitespace", () => {
+  test("returns undefined companySummary when field is an empty string", () => {
     const result = parseCritiqueResponse(
       JSON.stringify({ ...VALID_CRITIQUE_PAYLOAD, companySummary: "   " })
     );
