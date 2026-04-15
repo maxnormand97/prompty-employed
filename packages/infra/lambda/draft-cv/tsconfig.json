@@ -5,7 +5,9 @@
     "moduleResolution": "Node",
     "lib": ["ES2022"],
     "types": ["node", "jest"],
-    "outDir": "dist"
+    "outDir": "dist",
+    "noEmit": false,
+    "incremental": false
   },
   "include": ["./**/*.ts"],
   "exclude": ["node_modules", "dist"]

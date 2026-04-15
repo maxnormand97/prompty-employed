@@ -34,6 +34,8 @@ package_lambda() {
   fi
 
   echo "=== [$name] Compiling TypeScript ==="
+  # Clean previous build to prevent stale compiled output from being packaged
+  rm -rf "$dir/dist"
   # Use the lambda's own local tsc binary to avoid version mismatches
   local tsc_bin="$dir/node_modules/.bin/tsc"
   if [[ ! -x "$tsc_bin" ]]; then
