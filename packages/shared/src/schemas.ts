@@ -70,8 +70,15 @@ export const TailoredOutputSchema = z.object({
   jobId: z.string().uuid(),
   completedAt: z.string().datetime(),
 
-  tailoredCV: z.string().min(1),
-  coverLetter: z.string().min(1),
+  /** "FIT" when the candidate passed pre-screening; "NO_FIT" when they didn't. */
+  fitVerdict: z.enum(["FIT", "NO_FIT"]).optional(),
+  /** One-sentence reason populated only on NO_FIT. */
+  fitReason: z.string().optional(),
+
+  /** Absent when fitVerdict is "NO_FIT" — no draft was generated. */
+  tailoredCV: z.string().min(1).optional(),
+  /** Absent when fitVerdict is "NO_FIT" — no draft was generated. */
+  coverLetter: z.string().min(1).optional(),
 
   critiqueNotes: z.string().min(1),
   fitScore: z.number().int().min(0).max(100),

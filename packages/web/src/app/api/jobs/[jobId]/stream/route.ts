@@ -64,39 +64,50 @@ export async function GET(
 
           if (status !== lastSentStatus) {
             if (status === "COMPLETE") {
-              // Fetch all three artefacts in parallel
-              const [analysisRaw, tailoredCV, coverLetter] = await Promise.all([
-                s3
-                  .send(
-                    new GetObjectCommand({
-                      Bucket: bucketName,
-                      Key: `results/${jobId}/analysis.json`,
-                    })
-                  )
-                  .then((r) => r.Body!.transformToString("utf-8")),
-                s3
-                  .send(
-                    new GetObjectCommand({
-                      Bucket: bucketName,
-                      Key: `results/${jobId}/tailored-cv.md`,
-                    })
-                  )
-                  .then((r) => r.Body!.transformToString("utf-8")),
-                s3
-                  .send(
-                    new GetObjectCommand({
-                      Bucket: bucketName,
-                      Key: `results/${jobId}/cover-letter.md`,
-                    })
-                  )
-                  .then((r) => r.Body!.transformToString("utf-8")),
-              ]);
+              // Always fetch analysis.json first — it drives whether CV artefacts exist
+              const analysisRaw = await s3
+                .send(
+                  new GetObjectCommand({
+                    Bucket: bucketName,
+                    Key: `results/${jobId}/analysis.json`,
+                  })
+                )
+                .then((r) => r.Body!.transformToString("utf-8"));
 
               const analysis = JSON.parse(analysisRaw);
-              send({
-                status: "COMPLETE",
-                result: { ...analysis, tailoredCV, coverLetter, jobId },
-              });
+
+              if (analysis.fitVerdict === "NO_FIT") {
+                // Pre-screening rejected this candidate — CV artefacts were never written
+                send({
+                  status: "COMPLETE",
+                  result: { ...analysis, jobId },
+                });
+              } else {
+                // FIT path — fetch the tailored CV and cover letter in parallel
+                const [tailoredCV, coverLetter] = await Promise.all([
+                  s3
+                    .send(
+                      new GetObjectCommand({
+                        Bucket: bucketName,
+                        Key: `results/${jobId}/tailored-cv.md`,
+                      })
+                    )
+                    .then((r) => r.Body!.transformToString("utf-8")),
+                  s3
+                    .send(
+                      new GetObjectCommand({
+                        Bucket: bucketName,
+                        Key: `results/${jobId}/cover-letter.md`,
+                      })
+                    )
+                    .then((r) => r.Body!.transformToString("utf-8")),
+                ]);
+
+                send({
+                  status: "COMPLETE",
+                  result: { ...analysis, tailoredCV, coverLetter, jobId },
+                });
+              }
               break;
             } else if (status === "FAILED") {
               send({

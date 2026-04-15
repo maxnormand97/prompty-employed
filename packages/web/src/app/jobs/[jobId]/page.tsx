@@ -23,8 +23,9 @@ type SSEPayload =
   | { status: "COMPLETE"; result: TailoredOutput }
   | { status: "FAILED"; errorMessage: string };
 
-// The display order of pipeline steps
-const STEPS: { status: JobStatus; label: string; description: string }[] = [
+// The display order of pipeline steps — shown for FIT jobs.
+// NO_FIT jobs skip DRAFTING and CRITIQUE entirely, so we show a condensed list.
+const FIT_STEPS: { status: JobStatus; label: string; description: string }[] = [
   {
     status: "PENDING",
     label: "Submitted",
@@ -33,12 +34,12 @@ const STEPS: { status: JobStatus; label: string; description: string }[] = [
   {
     status: "DRAFTING",
     label: "Drafting CV & Cover Letter",
-    description: "Claude 3.7 Sonnet is tailoring your application.",
+    description: "Claude is tailoring your application.",
   },
   {
     status: "CRITIQUE",
     label: "Analysing Your Fit",
-    description: "Claude Haiku is scoring your application and identifying gaps.",
+    description: "Scoring your application and identifying gaps.",
   },
   {
     status: "COMPLETE",
@@ -47,13 +48,31 @@ const STEPS: { status: JobStatus; label: string; description: string }[] = [
   },
 ];
 
-// Maps a status value to a 0-based step index so we can show completed/active/pending
+const NO_FIT_STEPS: { status: JobStatus; label: string; description: string }[] = [
+  {
+    status: "PENDING",
+    label: "Submitted",
+    description: "Your inputs have been received.",
+  },
+  {
+    status: "DRAFTING",
+    label: "Screening",
+    description: "Checking your application against the role requirements.",
+  },
+  {
+    status: "COMPLETE",
+    label: "Screening Complete",
+    description: "Screening complete.",
+  },
+];
+
+// Maps a status value to a 0-based step index for the FIT step list
 function statusToIndex(status: JobStatus): number {
   const map: Record<JobStatus, number> = {
     PENDING: 0,
     DRAFTING: 1,
     CRITIQUE: 2,
-    COMPLETE: STEPS.length, // one past the last step index so all steps show as done
+    COMPLETE: FIT_STEPS.length, // one past the last step index so all steps show as done
     FAILED: -1,
   };
   return map[status] ?? -1;
@@ -217,8 +236,14 @@ export default function JobPage() {
     return () => es.close();
   }, [jobId]);
 
+  const isNoFit = result?.fitVerdict === "NO_FIT";
   const currentIndex = statusToIndex(status);
   const isFailed = status === "FAILED";
+  const steps = isNoFit ? NO_FIT_STEPS : FIT_STEPS;
+  // For NO_FIT the step list is shorter, so recalculate the active index
+  const noFitStatusToIndex = (s: JobStatus) =>
+    ({ PENDING: 0, DRAFTING: 1, CRITIQUE: 1, COMPLETE: NO_FIT_STEPS.length, FAILED: -1 }[s] ?? -1);
+  const activeIndex = isNoFit ? noFitStatusToIndex(status) : currentIndex;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-12 space-y-12">
@@ -236,12 +261,18 @@ export default function JobPage() {
           ← New application
         </button>
         <h1 className="text-2xl font-bold tracking-tight">
-          {isFailed ? "Something went wrong" : "Tailoring your application…"}
+          {isFailed
+            ? "Something went wrong"
+            : isNoFit
+            ? "Application not competitive"
+            : status === "COMPLETE"
+            ? "Your application is ready"
+            : "Tailoring your application…"}
         </h1>
         <p className="sr-only" aria-live="polite" aria-atomic="true">
           {isFailed
             ? `Error: ${errorMessage}`
-            : `Current step: ${STEPS[Math.min(Math.max(0, currentIndex), STEPS.length - 1)]?.label ?? status}`}
+            : `Current step: ${steps[Math.min(Math.max(0, activeIndex), steps.length - 1)]?.label ?? status}`}
         </p>
         <p className="text-sm text-muted-foreground font-mono">
           Job ID: {jobId}
@@ -274,9 +305,9 @@ export default function JobPage() {
           </CardHeader>
           <CardContent>
             <ol className="space-y-4" aria-label="Pipeline progress">
-              {STEPS.map((step, i) => {
-                const isDone = i < currentIndex;
-                const isActive = i === currentIndex;
+              {steps.map((step, i) => {
+                const isDone = i < activeIndex;
+                const isActive = i === activeIndex;
 
                 return (
                   <li key={step.status} className="flex items-start gap-4">
@@ -363,11 +394,46 @@ export default function JobPage() {
       {result && (
         <div ref={resultsRef} className="space-y-8">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">Your Results</h2>
+            <h2 className="text-2xl font-bold tracking-tight">
+              {isNoFit ? "Screening Result" : "Your Results"}
+            </h2>
             <p className="text-base text-muted-foreground mt-1">
-              All four artefacts generated in one run · {new Date(result.completedAt).toLocaleTimeString()}
+              {isNoFit
+                ? `Assessed ${new Date(result.completedAt).toLocaleTimeString()}`
+                : `All four artefacts generated in one run · ${new Date(result.completedAt).toLocaleTimeString()}`}
             </p>
           </div>
+
+          {/* ── NO_FIT banner ──────────────────────────────────────── */}
+          {isNoFit && (
+            <Card className="border-amber-500/40 bg-amber-500/5">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl" aria-hidden>⚠️</span>
+                  <div>
+                    <CardTitle>This application is not competitive</CardTitle>
+                    <CardDescription className="mt-1">
+                      Automated screening determined your background does not meet the minimum
+                      requirements for this role.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <Separator />
+              <CardContent className="pt-5 space-y-4">
+                {result.fitReason && (
+                  <p className="text-base text-amber-300/90 leading-relaxed">
+                    {result.fitReason}
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  A tailored CV and cover letter were not generated because submitting this
+                  application would be unlikely to progress. Review the gap analysis below
+                  for steps you can take to become a competitive candidate for similar roles.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* ── A: Company & Role Brief ─────────────────────────── */}
           {result.companySummary && (
@@ -387,19 +453,20 @@ export default function JobPage() {
             </Card>
           )}
 
-          {/* ── B: Tailored CV ──────────────────────────────────────── */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
-              <div>
-                <CardTitle>Tailored CV</CardTitle>
-                <CardDescription>
-                  Rewritten to lead with experience most relevant to this role.
-                </CardDescription>
-              </div>
-              <Button
+          {/* ── B: Tailored CV — hidden on NO_FIT ──────────────────── */}
+          {!isNoFit && result.tailoredCV && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
+                <div>
+                  <CardTitle>Tailored CV</CardTitle>
+                  <CardDescription>
+                    Rewritten to lead with experience most relevant to this role.
+                  </CardDescription>
+                </div>
+                <Button
                 variant="outline"
                 size="default"
-                onClick={() => downloadMarkdown(result.tailoredCV, "tailored-cv.md")}
+                onClick={() => downloadMarkdown(result.tailoredCV!, "tailored-cv.md")}
                 className="shrink-0"
                 aria-label="Download tailored CV as Markdown"
               >
@@ -415,8 +482,10 @@ export default function JobPage() {
               </div>
             </CardContent>
           </Card>
+          )}
 
-          {/* ── C: Cover Letter ─────────────────────────────────────── */}
+          {/* ── C: Cover Letter — hidden on NO_FIT ──────────────────── */}
+          {!isNoFit && result.coverLetter && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
               <div>
@@ -428,7 +497,7 @@ export default function JobPage() {
               <Button
                 variant="outline"
                 size="default"
-                onClick={() => downloadMarkdown(result.coverLetter, "cover-letter.md")}
+                onClick={() => downloadMarkdown(result.coverLetter!, "cover-letter.md")}
                 className="shrink-0"
                 aria-label="Download cover letter as Markdown"
               >
@@ -444,14 +513,16 @@ export default function JobPage() {
               </div>
             </CardContent>
           </Card>
+          )}
 
           {/* ── D: Scorecard ────────────────────────────────────────── */}
           <Card>
             <CardHeader>
-              <CardTitle>Application Scorecard</CardTitle>
+              <CardTitle>{isNoFit ? "Screening Scorecard" : "Application Scorecard"}</CardTitle>
               <CardDescription>
-                How well your tailored application aligns to the role, and an honest
-                assessment of your likelihood of progressing.
+                {isNoFit
+                  ? "Why this application did not pass the minimum requirements threshold."
+                  : "How well your tailored application aligns to the role, and an honest assessment of your likelihood of progressing."}
               </CardDescription>
             </CardHeader>
             <Separator />
@@ -484,14 +555,14 @@ export default function JobPage() {
               {result.critiqueNotes && (
                 <div className="rounded-lg bg-muted/40 p-4 text-base text-muted-foreground border border-border/40">
                   <p className="text-sm font-semibold uppercase tracking-wide text-foreground/60 mb-2">
-                    CV Critique
+                    {isNoFit ? "Screening Notes" : "CV Critique"}
                   </p>
                   {result.critiqueNotes}
                 </div>
               )}
 
-              {/* Suggested improvements */}
-              {result.suggestedImprovements.length > 0 && (
+              {/* Suggested improvements — hide on NO_FIT (gap analysis covers this) */}
+              {!isNoFit && result.suggestedImprovements.length > 0 && (
                 <div>
                   <p className="text-base font-semibold mb-3">Quick Wins</p>
                   <ul className="space-y-2">
@@ -512,7 +583,11 @@ export default function JobPage() {
             <CardHeader>
               <CardTitle>Gap Analysis</CardTitle>
               <CardDescription>
-                {result.gapAnalysis.length === 0
+                {isNoFit
+                  ? result.gapAnalysis.length === 0
+                    ? "No detailed gap breakdown available."
+                    : `${result.gapAnalysis.length} gap${result.gapAnalysis.length !== 1 ? "s" : ""} to close before applying to similar roles.`
+                  : result.gapAnalysis.length === 0
                   ? "No significant gaps found — your experience closely matches this role."
                   : `${result.gapAnalysis.length} area${result.gapAnalysis.length !== 1 ? "s" : ""} to address, ordered by priority.`}
               </CardDescription>
@@ -551,7 +626,7 @@ export default function JobPage() {
               size="lg"
               className="bg-violet-600 hover:bg-violet-500 text-white"
             >
-              Tailor Another Application →
+              {isNoFit ? "Try a Different Role →" : "Tailor Another Application →"}
             </Button>
           </div>
         </div>

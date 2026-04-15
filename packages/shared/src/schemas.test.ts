@@ -182,3 +182,59 @@ describe('TailoredOutputSchema — companySummary (optional)', () => {
     expect(TailoredOutputSchema.safeParse({ ...base, fitScore: 101 }).success).toBe(false);
   });
 });
+
+describe('TailoredOutputSchema — NO_FIT results', () => {
+  const noFitBase = {
+    jobId: '123e4567-e89b-12d3-a456-426614174000',
+    completedAt: new Date().toISOString(),
+    fitVerdict: 'NO_FIT',
+    fitReason: 'Candidate lacks required 3D modelling experience.',
+    critiqueNotes: 'Automated pre-screening determined the candidate does not have a sufficient basis to apply.',
+    fitScore: 5,
+    fitRationale: 'The candidate lacks the minimum qualifications for this role.',
+    likelihoodScore: 5,
+    likelihoodRationale: 'Would not pass initial screening.',
+    suggestedImprovements: [],
+    gapAnalysis: [],
+  };
+
+  it('accepts a NO_FIT result without tailoredCV or coverLetter', () => {
+    expect(TailoredOutputSchema.safeParse(noFitBase).success).toBe(true);
+  });
+
+  it('accepts a FIT result with fitVerdict set to FIT', () => {
+    const fitResult = {
+      ...noFitBase,
+      fitVerdict: 'FIT',
+      tailoredCV: 'cv content',
+      coverLetter: 'letter content',
+    };
+    expect(TailoredOutputSchema.safeParse(fitResult).success).toBe(true);
+  });
+
+  it('accepts a result without fitVerdict (legacy records without pre-screen)', () => {
+    const legacy = {
+      ...noFitBase,
+      fitVerdict: undefined,
+      tailoredCV: 'cv content',
+      coverLetter: 'letter content',
+    };
+    expect(TailoredOutputSchema.safeParse(legacy).success).toBe(true);
+  });
+
+  it('rejects an unknown fitVerdict value', () => {
+    expect(
+      TailoredOutputSchema.safeParse({ ...noFitBase, fitVerdict: 'MAYBE' }).success
+    ).toBe(false);
+  });
+
+  it('stores fitReason when provided', () => {
+    const result = TailoredOutputSchema.safeParse(noFitBase);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.fitReason).toBe('Candidate lacks required 3D modelling experience.');
+      expect(result.data.tailoredCV).toBeUndefined();
+      expect(result.data.coverLetter).toBeUndefined();
+    }
+  });
+});
