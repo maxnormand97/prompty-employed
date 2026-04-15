@@ -9,8 +9,10 @@ function getRequiredEnvVar(name: string): string {
 }
 
 export function loadEnv(): DraftCVEnv {
+  const bedrockModelId = getRequiredEnvVar("BEDROCK_MODEL_ID");
   return {
-    bedrockModelId: getRequiredEnvVar("BEDROCK_MODEL_ID"),
+    bedrockModelId,
+    bedrockScreenModelId: process.env["BEDROCK_SCREEN_MODEL_ID"]?.trim() || bedrockModelId,
     jobsTableName: getRequiredEnvVar("JOBS_TABLE_NAME"),
     resultsBucketName: getRequiredEnvVar("RESULTS_BUCKET_NAME"),
   };

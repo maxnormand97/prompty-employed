@@ -4,15 +4,25 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 import { log } from "./log";
 
+export interface InvokeBedrockOptions {
+  /** Top-level system prompt — treated with higher authority than the user turn. */
+  systemPrompt?: string;
+  /** Max tokens to generate. Defaults to 4096. */
+  maxTokens?: number;
+}
+
 export async function invokeBedrockText(
   bedrock: BedrockRuntimeClient,
   modelId: string,
-  prompt: string
+  prompt: string,
+  options?: InvokeBedrockOptions
 ): Promise<string> {
-  log("info", "Invoking Bedrock model", { modelId, promptLength: prompt.length });
+  const maxTokens = options?.maxTokens ?? 4096;
+  log("info", "Invoking Bedrock model", { modelId, promptLength: prompt.length, maxTokens });
   const body = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
-    max_tokens: 4096,
+    max_tokens: maxTokens,
+    ...(options?.systemPrompt ? { system: options.systemPrompt } : {}),
     messages: [{ role: "user", content: prompt }],
   });
 

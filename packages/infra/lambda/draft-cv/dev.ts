@@ -38,6 +38,7 @@ export async function main(): Promise<void> {
 
   const mockEnv: DraftCVEnv = {
     bedrockModelId: "anthropic.claude-3-7-sonnet-20250219-v1:0",
+    bedrockScreenModelId: "anthropic.claude-3-haiku-20240307-v1:0",
     jobsTableName: "PromptlyEmployedJobs",
     resultsBucketName: "PromptlyEmployedResults",
   };
@@ -103,10 +104,15 @@ export async function main(): Promise<void> {
     const result = await runDraftCV(mockEvent, clients, mockEnv);
     console.log("\n─── Result ───────────────────────────────────────────────");
     console.log(JSON.stringify(result, null, 2));
-    console.log("\n─── Generated CV ─────────────────────────────────────────");
-    console.log(s3Store[result.s3TailoredCVKey]);
-    console.log("\n─── Cover Letter ─────────────────────────────────────────");
-    console.log(s3Store[result.s3CoverLetterKey]);
+    if (result.fitVerdict === "FIT" && result.s3TailoredCVKey && result.s3CoverLetterKey) {
+      console.log("\n─── Generated CV ─────────────────────────────────────────");
+      console.log(s3Store[result.s3TailoredCVKey]);
+      console.log("\n─── Cover Letter ─────────────────────────────────────────");
+      console.log(s3Store[result.s3CoverLetterKey]);
+    } else {
+      console.log("\n─── NO_FIT ───────────────────────────────────────────────");
+      console.log("Reason:", result.fitReason);
+    }
   } catch (err) {
     log("error", "Local run failed", {
       error: err instanceof Error ? err.message : String(err),
