@@ -8,13 +8,21 @@ export interface DraftCVInput {
   jobId: string;
   s3ResumeKey: string;
   s3JobDescKey: string;
+  s3CompanyInfoKey?: string;
 }
 
 export interface DraftCVOutput {
   jobId: string;
-  s3TailoredCVKey: string;
-  s3CoverLetterKey: string;
+  /** "FIT" when the candidate passes pre-screening; "NO_FIT" when the screen rejects them. */
+  fitVerdict: "FIT" | "NO_FIT";
+  /** Human-readable reason populated only on NO_FIT. */
+  fitReason?: string;
+  /** Absent when fitVerdict is "NO_FIT". */
+  s3TailoredCVKey?: string;
+  /** Absent when fitVerdict is "NO_FIT". */
+  s3CoverLetterKey?: string;
   s3JobDescKey: string;
+  s3CompanyInfoKey?: string;
 }
 
 export interface DraftCVClients {
@@ -25,6 +33,8 @@ export interface DraftCVClients {
 
 export interface DraftCVEnv {
   bedrockModelId: string;
+  /** Model ID for the cheap pre-screening call. Defaults to bedrockModelId if not set via env. */
+  bedrockScreenModelId: string;
   jobsTableName: string;
   resultsBucketName: string;
 }

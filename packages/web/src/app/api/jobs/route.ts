@@ -71,9 +71,12 @@ export async function POST(request: NextRequest) {
   const jobId = uuidv4();
   const s3ResumeKey = `inputs/${jobId}/resume.txt`;
   const s3JobDescKey = `inputs/${jobId}/job-desc.txt`;
+  const s3CompanyInfoKey = parsed.data.companyInfo
+    ? `inputs/${jobId}/company-info.txt`
+    : undefined;
 
   // 1. Upload raw inputs to S3
-  await Promise.all([
+  const s3Uploads: Promise<unknown>[] = [
     s3.send(
       new PutObjectCommand({
         Bucket: bucketName,
@@ -90,7 +93,22 @@ export async function POST(request: NextRequest) {
         ContentType: "text/plain; charset=utf-8",
       })
     ),
-  ]);
+  ];
+
+  if (s3CompanyInfoKey && parsed.data.companyInfo) {
+    s3Uploads.push(
+      s3.send(
+        new PutObjectCommand({
+          Bucket: bucketName,
+          Key: s3CompanyInfoKey,
+          Body: parsed.data.companyInfo,
+          ContentType: "text/plain; charset=utf-8",
+        })
+      )
+    );
+  }
+
+  await Promise.all(s3Uploads);
 
   // 2. Create a PENDING record in DynamoDB
   await dynamo.send(
@@ -112,7 +130,7 @@ export async function POST(request: NextRequest) {
       new StartExecutionCommand({
         stateMachineArn,
         name: jobId,
-        input: JSON.stringify({ jobId, s3ResumeKey, s3JobDescKey }),
+        input: JSON.stringify({ jobId, s3ResumeKey, s3JobDescKey, ...(s3CompanyInfoKey ? { s3CompanyInfoKey } : {}) }),
       })
     );
   } catch (err) {
@@ -136,7 +154,11 @@ export async function POST(request: NextRequest) {
         new DeleteObjectsCommand({
           Bucket: bucketName,
           Delete: {
-            Objects: [{ Key: s3ResumeKey }, { Key: s3JobDescKey }],
+            Objects: [
+              { Key: s3ResumeKey },
+              { Key: s3JobDescKey },
+              ...(s3CompanyInfoKey ? [{ Key: s3CompanyInfoKey }] : []),
+            ],
           },
         })
       ),

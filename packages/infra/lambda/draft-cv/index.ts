@@ -24,13 +24,12 @@ import { loadEnv } from "./lib/env";
 import { DraftCVInput, DraftCVOutput, DraftCVClients } from "./lib/types";
 import { runDraftCV } from "./core";
 
-// ── Re-exports (consumed by tests and other modules) ───────────────────────
 export { log } from "./lib/log";
 export { loadEnv } from "./lib/env";
 export { readS3Object, writeS3Object } from "./lib/s3";
-export { setJobStatus } from "./lib/dynamo";
+export { setJobStatus, setJobComplete } from "./lib/dynamo";
 export { invokeBedrockText } from "./lib/bedrock";
-export { buildDraftPrompt } from "./lib/prompt";
+export { DRAFT_SYSTEM_PROMPT, buildDraftPrompt, buildScreenPrompt } from "./lib/prompt";
 export { runDraftCV } from "./core";
 export type {
   DraftCVInput,

@@ -11,6 +11,10 @@ export const JobSubmissionSchema = z.object({
     .string()
     .min(50, "Job description must be at least 50 characters")
     .max(15000, "Job description must not exceed 15 000 characters"),
+  companyInfo: z
+    .string()
+    .max(5000, "Company information must not exceed 5 000 characters")
+    .optional(),
 });
 
 export type JobSubmission = z.infer<typeof JobSubmissionSchema>;
@@ -45,6 +49,7 @@ export const StepFunctionInputSchema = z.object({
   jobId: z.string().uuid(),
   s3ResumeKey: z.string(),
   s3JobDescKey: z.string(),
+  s3CompanyInfoKey: z.string().optional(),
 });
 
 export type StepFunctionInput = z.infer<typeof StepFunctionInputSchema>;
@@ -65,8 +70,15 @@ export const TailoredOutputSchema = z.object({
   jobId: z.string().uuid(),
   completedAt: z.string().datetime(),
 
-  tailoredCV: z.string().min(1),
-  coverLetter: z.string().min(1),
+  /** "FIT" when the candidate passed pre-screening; "NO_FIT" when they didn't. */
+  fitVerdict: z.enum(["FIT", "NO_FIT"]).optional(),
+  /** One-sentence reason populated only on NO_FIT. */
+  fitReason: z.string().optional(),
+
+  /** Absent when fitVerdict is "NO_FIT" — no draft was generated. */
+  tailoredCV: z.string().min(1).optional(),
+  /** Absent when fitVerdict is "NO_FIT" — no draft was generated. */
+  coverLetter: z.string().min(1).optional(),
 
   critiqueNotes: z.string().min(1),
   fitScore: z.number().int().min(0).max(100),
@@ -75,6 +87,7 @@ export const TailoredOutputSchema = z.object({
   likelihoodRationale: z.string(),
   suggestedImprovements: z.array(z.string()),
   gapAnalysis: z.array(GapAdviceSchema),
+  companySummary: z.string().optional(),
 });
 
 export type TailoredOutput = z.infer<typeof TailoredOutputSchema>;

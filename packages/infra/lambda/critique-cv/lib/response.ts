@@ -10,12 +10,7 @@ export function parseCritiqueResponse(raw: string): CritiqueResult {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    const snippetLength = 200;
-    log("error", "Bedrock response was not valid JSON", {
-      rawResponseLength: raw.length,
-      rawResponseSnippet: raw.slice(0, snippetLength),
-      rawResponseSnippetTruncated: raw.length > snippetLength,
-    });
+    log("error", "Bedrock response was not valid JSON", { rawResponse: raw });
     throw new Error(`Bedrock response was not valid JSON (length=${raw.length})`);
   }
 
@@ -74,5 +69,9 @@ export function parseCritiqueResponse(raw: string): CritiqueResult {
     likelihoodRationale: result.likelihoodRationale as string,
     suggestedImprovements: result.suggestedImprovements as string[],
     gapAnalysis: result.gapAnalysis as GapAdvice[],
+    companySummary:
+      typeof result.companySummary === "string" && result.companySummary.trim() !== ""
+        ? (result.companySummary as string)
+        : undefined,
   };
 }
