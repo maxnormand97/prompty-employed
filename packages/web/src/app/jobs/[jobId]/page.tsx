@@ -1,258 +1,43 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import type { JobStatus, TailoredOutput, GapAdvice } from "@/lib/types";
+import { Card, CardContent } from "@/components/ui/card";
+import { useJobStream } from "@/hooks/use-job-stream";
+import { AtsKeywordCard } from "./_components/ats-keyword-card";
+import { CompanyBriefCard } from "./_components/company-brief-card";
+import { CoverLetterCard } from "./_components/cover-letter-card";
+import { GapAnalysisCard } from "./_components/gap-analysis-card";
+import { NextStepsCard } from "./_components/next-steps-card";
+import { NoFitBanner } from "./_components/no-fit-banner";
+import { PipelineStatus } from "./_components/pipeline-status";
+import { ResumeDraftCard } from "./_components/resume-draft-card";
+import { ScorecardCard } from "./_components/scorecard-card";
 
-// ── Types ──────────────────────────────────────────────────────────────────
-
-type SSEPayload =
-  | { status: "PENDING" | "DRAFTING" | "CRITIQUE" }
-  | { status: "COMPLETE"; result: TailoredOutput }
-  | { status: "FAILED"; errorMessage: string };
-
-// The display order of pipeline steps — shown for FIT jobs.
-// NO_FIT jobs skip DRAFTING and CRITIQUE entirely, so we show a condensed list.
-const FIT_STEPS: { status: JobStatus; label: string; description: string }[] = [
-  {
-    status: "PENDING",
-    label: "Submitted",
-    description: "Your inputs have been received.",
-  },
-  {
-    status: "DRAFTING",
-    label: "Drafting CV & Cover Letter",
-    description: "Claude is tailoring your application.",
-  },
-  {
-    status: "CRITIQUE",
-    label: "Analysing Your Fit",
-    description: "Scoring your application and identifying gaps.",
-  },
-  {
-    status: "COMPLETE",
-    label: "Ready",
-    description: "Your tailored application is ready.",
-  },
-];
-
-const NO_FIT_STEPS: { status: JobStatus; label: string; description: string }[] = [
-  {
-    status: "PENDING",
-    label: "Submitted",
-    description: "Your inputs have been received.",
-  },
-  {
-    status: "DRAFTING",
-    label: "Screening",
-    description: "Checking your application against the role requirements.",
-  },
-  {
-    status: "COMPLETE",
-    label: "Screening Complete",
-    description: "Screening complete.",
-  },
-];
-
-// Maps a status value to a 0-based step index for the FIT step list
-function statusToIndex(status: JobStatus): number {
-  const map: Record<JobStatus, number> = {
-    PENDING: 0,
-    DRAFTING: 1,
-    CRITIQUE: 2,
-    COMPLETE: FIT_STEPS.length, // one past the last step index so all steps show as done
-    FAILED: -1,
-  };
-  return map[status] ?? -1;
-}
-
-// ── Score Ring component ───────────────────────────────────────────────────
-
-function ScoreRing({
-  score,
-  label,
-  color,
-}: {
-  score: number;
-  label: string;
-  color: "violet" | "emerald";
-}) {
-  const radius = 42;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (score / 100) * circumference;
-  const strokeColor = color === "violet" ? "#7c3aed" : "#10b981";
-
-  return (
-    <div
-      className="flex flex-col items-center gap-1"
-      role="img"
-      aria-label={`${label}: ${score} out of 100`}
-    >
-      <div className="relative h-28 w-28">
-        <svg className="h-28 w-28 -rotate-90" viewBox="0 0 100 100" aria-hidden>
-          {/* Track */}
-          <circle
-            cx="50"
-            cy="50"
-            r={radius}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="8"
-            className="text-muted/30"
-          />
-          {/* Fill */}
-          <circle
-            cx="50"
-            cy="50"
-            r={radius}
-            fill="none"
-            stroke={strokeColor}
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            style={{ transition: "stroke-dashoffset 0.8s ease" }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-2xl font-bold tabular-nums">{score}</span>
-        </div>
-      </div>
-      <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-        {label}
-      </span>
-    </div>
-  );
-}
-
-// ── Priority badge ─────────────────────────────────────────────────────────
-
-const PRIORITY_CONFIG = {
-  HIGH: {
-    label: "HIGH",
-    className: "bg-red-500/15 text-red-400 border-red-500/20",
-    dot: "bg-red-500",
-  },
-  MEDIUM: {
-    label: "MEDIUM",
-    className: "bg-amber-500/15 text-amber-400 border-amber-500/20",
-    dot: "bg-amber-500",
-  },
-  LOW: {
-    label: "LOW",
-    className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
-    dot: "bg-emerald-500",
-  },
-} as const;
-
-function PriorityBadge({ priority }: { priority: GapAdvice["priority"] }) {
-  const config = PRIORITY_CONFIG[priority];
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-sm font-semibold ${config.className}`}
-    >
-      <span className={`h-2 w-2 rounded-full ${config.dot}`} aria-hidden />
-      {config.label}
-    </span>
-  );
-}
-
-// ── Download helper ────────────────────────────────────────────────────────
-
-function downloadMarkdown(content: string, filename: string) {
-  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ── Main page ──────────────────────────────────────────────────────────────
 
 export default function JobPage() {
   const router = useRouter();
   const params = useParams();
   const jobId = params.jobId as string;
 
-  const [status, setStatus] = useState<JobStatus>("PENDING");
-  const [result, setResult] = useState<TailoredOutput | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string>("");
-  const resultsRef = useRef<HTMLDivElement>(null);
-  const hasScrolled = useRef(false);
-
-  useEffect(() => {
-    if (!jobId) return;
-
-    const es = new EventSource(`/api/jobs/${jobId}/stream`);
-
-    es.onmessage = (event) => {
-      let payload: SSEPayload;
-      try {
-        payload = JSON.parse(event.data as string) as SSEPayload;
-      } catch {
-        return;
-      }
-
-      setStatus(payload.status);
-
-      if (payload.status === "COMPLETE") {
-        setResult(payload.result);
-        es.close();
-        // Auto-scroll to results once
-        if (!hasScrolled.current) {
-          hasScrolled.current = true;
-          setTimeout(() => {
-            resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }, 200);
-        }
-      }
-
-      if (payload.status === "FAILED") {
-        setErrorMessage(payload.errorMessage ?? "An unexpected error occurred.");
-        es.close();
-      }
-    };
-
-    es.onerror = () => {
-      setStatus("FAILED");
-      setErrorMessage("Lost connection to the server. Please try again.");
-      es.close();
-    };
-
-    return () => es.close();
-  }, [jobId]);
+  const { status, result, errorMessage, jdText, resultsRef } = useJobStream(jobId);
 
   const isNoFit = result?.fitVerdict === "NO_FIT";
-  const currentIndex = statusToIndex(status);
   const isFailed = status === "FAILED";
-  const steps = isNoFit ? NO_FIT_STEPS : FIT_STEPS;
-  // For NO_FIT the step list is shorter, so recalculate the active index
-  const noFitStatusToIndex = (s: JobStatus) =>
-    ({ PENDING: 0, DRAFTING: 1, CRITIQUE: 1, COMPLETE: NO_FIT_STEPS.length, FAILED: -1 }[s] ?? -1);
-  const activeIndex = isNoFit ? noFitStatusToIndex(status) : currentIndex;
+  const [now] = useState(() => Date.now());
+  const daysSince = result
+    ? Math.floor((now - new Date(result.completedAt).getTime()) / 86_400_000)
+    : 0;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-12 space-y-12">
-      {/* Background blobs */}
+      {/* Background blob */}
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className="absolute -top-32 left-1/2 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-violet-600/8 blur-3xl" />
       </div>
 
-      {/* ── Header ─────────────────────────────────────────────────── */}
+      {/* Header */}
       <div className="space-y-1">
         <button
           onClick={() => router.push("/")}
@@ -270,16 +55,12 @@ export default function JobPage() {
             : "Tailoring your application…"}
         </h1>
         <p className="sr-only" aria-live="polite" aria-atomic="true">
-          {isFailed
-            ? `Error: ${errorMessage}`
-            : `Current step: ${steps[Math.min(Math.max(0, activeIndex), steps.length - 1)]?.label ?? status}`}
+          {isFailed ? `Error: ${errorMessage}` : `Status: ${status}`}
         </p>
-        <p className="text-sm text-muted-foreground font-mono">
-          Job ID: {jobId}
-        </p>
+        <p className="text-sm text-muted-foreground font-mono">Job ID: {jobId}</p>
       </div>
 
-      {/* ── Failed state ───────────────────────────────────────────── */}
+      {/* Failed state */}
       {isFailed && (
         <Card className="border-destructive/50 bg-destructive/5">
           <CardContent className="pt-6 space-y-4">
@@ -297,100 +78,10 @@ export default function JobPage() {
         </Card>
       )}
 
-      {/* ── Progress steps ─────────────────────────────────────────── */}
-      {!isFailed && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Pipeline Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ol className="space-y-4" aria-label="Pipeline progress">
-              {steps.map((step, i) => {
-                const isDone = i < activeIndex;
-                const isActive = i === activeIndex;
+      {/* Pipeline progress */}
+      {!isFailed && <PipelineStatus status={status} isNoFit={isNoFit} />}
 
-                return (
-                  <li key={step.status} className="flex items-start gap-4">
-                    {/* Icon */}
-                    <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                      {isDone ? (
-                        <svg
-                          className="h-5 w-5 text-emerald-400"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                          aria-label="Complete"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      ) : isActive ? (
-                        <svg
-                          className="h-5 w-5 animate-spin text-violet-400"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          aria-label="In progress"
-                        >
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          />
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8v8H4z"
-                          />
-                        </svg>
-                      ) : (
-                        <span
-                          className="h-2 w-2 rounded-full bg-muted-foreground/30"
-                          aria-label="Pending"
-                        />
-                      )}
-                    </div>
-                    {/* Text */}
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className={`text-base font-medium ${
-                          isDone
-                            ? "text-emerald-400"
-                            : isActive
-                            ? "text-foreground"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {step.label}
-                      </p>
-                      {isActive && (
-                        <p className="text-sm text-muted-foreground mt-0.5">
-                          {step.description}
-                        </p>
-                      )}
-                    </div>
-                    {/* Active badge */}
-                    {isActive && (
-                      <Badge
-                        variant="outline"
-                        className="shrink-0 border-violet-500/40 text-violet-400 text-sm"
-                      >
-                        Running
-                      </Badge>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Results ────────────────────────────────────────────────── */}
+      {/* Results */}
       {result && (
         <div ref={resultsRef} className="space-y-8">
           <div>
@@ -404,222 +95,45 @@ export default function JobPage() {
             </p>
           </div>
 
-          {/* ── NO_FIT banner ──────────────────────────────────────── */}
-          {isNoFit && (
-            <Card className="border-amber-500/40 bg-amber-500/5">
-              <CardHeader className="pb-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl" aria-hidden>⚠️</span>
-                  <div>
-                    <CardTitle>This application is not competitive</CardTitle>
-                    <CardDescription className="mt-1">
-                      Automated screening determined your background does not meet the minimum
-                      requirements for this role.
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <Separator />
-              <CardContent className="pt-5 space-y-4">
-                {result.fitReason && (
-                  <p className="text-base text-amber-300/90 leading-relaxed">
-                    {result.fitReason}
-                  </p>
-                )}
-                <p className="text-sm text-muted-foreground">
-                  A tailored CV and cover letter were not generated because submitting this
-                  application would be unlikely to progress. Review the gap analysis below
-                  for steps you can take to become a competitive candidate for similar roles.
-                </p>
-              </CardContent>
-            </Card>
+          {daysSince >= 1 && (
+            <div
+              className={`rounded-lg border px-4 py-2.5 text-sm flex items-center gap-2 ${
+                daysSince > 7
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                  : "border-border/40 bg-muted/30 text-muted-foreground"
+              }`}
+            >
+              <span aria-hidden>🕐</span>
+              {daysSince === 1
+                ? "Assessed 1 day ago — job postings change, consider re-analysing."
+                : `Assessed ${daysSince} days ago — job postings change, consider re-analysing.`}
+            </div>
           )}
 
-          {/* ── A: Company & Role Brief ─────────────────────────── */}
+          {isNoFit && <NoFitBanner fitReason={result.fitReason} />}
+
           {result.companySummary && (
-            <Card className="border-violet-500/30 bg-violet-500/5">
-              <CardHeader className="pb-3">
-                <CardTitle>Company & Role Brief</CardTitle>
-                <CardDescription>
-                  Key things to keep in mind as you prepare your application and interviews.
-                </CardDescription>
-              </CardHeader>
-              <Separator />
-              <CardContent className="pt-5">
-                <p className="text-base text-muted-foreground leading-relaxed">
-                  {result.companySummary}
-                </p>
-              </CardContent>
-            </Card>
+            <CompanyBriefCard companySummary={result.companySummary} />
           )}
 
-          {/* ── B: Tailored CV — hidden on NO_FIT ──────────────────── */}
+          {!isNoFit && jdText && (
+            <AtsKeywordCard jdText={jdText} tailoredCV={result.tailoredCV} />
+          )}
+
           {!isNoFit && result.tailoredCV && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
-                <div>
-                  <CardTitle>Tailored CV</CardTitle>
-                  <CardDescription>
-                    Rewritten to lead with experience most relevant to this role.
-                  </CardDescription>
-                </div>
-                <Button
-                variant="outline"
-                size="default"
-                onClick={() => downloadMarkdown(result.tailoredCV!, "tailored-cv.md")}
-                className="shrink-0"
-                aria-label="Download tailored CV as Markdown"
-              >
-                Download .md
-              </Button>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-6">
-              <div className="prose prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {result.tailoredCV}
-                </ReactMarkdown>
-              </div>
-            </CardContent>
-          </Card>
+            <ResumeDraftCard tailoredCV={result.tailoredCV} />
           )}
 
-          {/* ── C: Cover Letter — hidden on NO_FIT ──────────────────── */}
           {!isNoFit && result.coverLetter && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
-              <div>
-                <CardTitle>Cover Letter</CardTitle>
-                <CardDescription>
-                  Written specifically for this role and company.
-                </CardDescription>
-              </div>
-              <Button
-                variant="outline"
-                size="default"
-                onClick={() => downloadMarkdown(result.coverLetter!, "cover-letter.md")}
-                className="shrink-0"
-                aria-label="Download cover letter as Markdown"
-              >
-                Download .md
-              </Button>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-6">
-              <div className="prose prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {result.coverLetter}
-                </ReactMarkdown>
-              </div>
-            </CardContent>
-          </Card>
+            <CoverLetterCard coverLetter={result.coverLetter} />
           )}
 
-          {/* ── D: Scorecard ────────────────────────────────────────── */}
-          <Card>
-            <CardHeader>
-              <CardTitle>{isNoFit ? "Screening Scorecard" : "Application Scorecard"}</CardTitle>
-              <CardDescription>
-                {isNoFit
-                  ? "Why this application did not pass the minimum requirements threshold."
-                  : "How well your tailored application aligns to the role, and an honest assessment of your likelihood of progressing."}
-              </CardDescription>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-6 space-y-6">
-              {/* Score rings */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col items-center gap-4 rounded-lg border border-border/60 bg-card p-6">
-                  <ScoreRing
-                    score={result.fitScore}
-                    label="CV Fit Score"
-                    color="violet"
-                  />
-                  <p className="text-center text-base text-muted-foreground">
-                    {result.fitRationale}
-                  </p>
-                </div>
-                <div className="flex flex-col items-center gap-4 rounded-lg border border-border/60 bg-card p-6">
-                  <ScoreRing
-                    score={result.likelihoodScore}
-                    label="Likelihood of Hire"
-                    color="emerald"
-                  />
-                  <p className="text-center text-base text-muted-foreground">
-                    {result.likelihoodRationale}
-                  </p>
-                </div>
-              </div>
+          <ScorecardCard result={result} isNoFit={isNoFit} />
 
-              {/* Critique notes */}
-              {result.critiqueNotes && (
-                <div className="rounded-lg bg-muted/40 p-4 text-base text-muted-foreground border border-border/40">
-                  <p className="text-sm font-semibold uppercase tracking-wide text-foreground/60 mb-2">
-                    {isNoFit ? "Screening Notes" : "CV Critique"}
-                  </p>
-                  {result.critiqueNotes}
-                </div>
-              )}
+          <GapAnalysisCard gapAnalysis={result.gapAnalysis} isNoFit={isNoFit} />
 
-              {/* Suggested improvements — hide on NO_FIT (gap analysis covers this) */}
-              {!isNoFit && result.suggestedImprovements.length > 0 && (
-                <div>
-                  <p className="text-base font-semibold mb-3">Quick Wins</p>
-                  <ul className="space-y-2">
-                    {result.suggestedImprovements.map((tip, i) => (
-                      <li key={i} className="flex items-start gap-2 text-base text-muted-foreground">
-                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" aria-hidden />
-                        {tip}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <NextStepsCard gapAnalysis={result.gapAnalysis} />
 
-          {/* ── E: Gap Analysis ─────────────────────────────────────── */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Gap Analysis</CardTitle>
-              <CardDescription>
-                {isNoFit
-                  ? result.gapAnalysis.length === 0
-                    ? "No detailed gap breakdown available."
-                    : `${result.gapAnalysis.length} gap${result.gapAnalysis.length !== 1 ? "s" : ""} to close before applying to similar roles.`
-                  : result.gapAnalysis.length === 0
-                  ? "No significant gaps found — your experience closely matches this role."
-                  : `${result.gapAnalysis.length} area${result.gapAnalysis.length !== 1 ? "s" : ""} to address, ordered by priority.`}
-              </CardDescription>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-6">
-              {result.gapAnalysis.length === 0 ? (
-                <p className="text-base text-emerald-400 font-medium">
-                  ✓ Your background is a strong match. No critical gaps identified.
-                </p>
-              ) : (
-                <ol className="space-y-6">
-                  {result.gapAnalysis.map((gap, i) => (
-                    <li key={i} className="space-y-2">
-                      <div className="flex items-start gap-3">
-                        <PriorityBadge priority={gap.priority} />
-                        <p className="text-base font-semibold leading-snug">{gap.gap}</p>
-                      </div>
-                      <p className="text-base text-muted-foreground leading-relaxed pl-0">
-                        {gap.advice}
-                      </p>
-                      {i < result.gapAnalysis.length - 1 && (
-                        <Separator className="mt-4" />
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* ── Footer CTA ──────────────────────────────────────────── */}
           <div className="text-center pb-8">
             <Button
               onClick={() => router.push("/")}
