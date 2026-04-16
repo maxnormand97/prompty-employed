@@ -76,7 +76,7 @@ export async function PATCH(request: NextRequest) {
   const { upsertRun } = await import("@/lib/server/dev-db");
   upsertRun({
     job_id: jobId,
-    submitted_at: new Date().toISOString(),
+    submitted_at: new Date().toISOString(), // only used if this is the first INSERT; ignored on UPDATE
     result_json: result != null ? JSON.stringify(result) : null,
     completed_at: result != null ? new Date().toISOString() : null,
     fit_verdict: result?.fitVerdict ?? null,
