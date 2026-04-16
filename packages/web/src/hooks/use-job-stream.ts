@@ -46,6 +46,17 @@ export function useJobStream(jobId: string): JobStreamState {
       if (payload.status === "COMPLETE") {
         setResult(payload.result);
         es.close();
+
+        // In dev mode, attach the AI result to the existing run row in local SQLite.
+        // Fire-and-forget — do not block result rendering.
+        if (process.env.NODE_ENV === "development") {
+          void fetch("/api/dev/runs", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jobId, result: payload.result }),
+          });
+        }
+
         if (!hasScrolled.current) {
           hasScrolled.current = true;
           setTimeout(() => {

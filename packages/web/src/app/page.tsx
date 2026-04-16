@@ -72,6 +72,23 @@ export default function HomePage() {
 
       const { jobId } = (await res.json()) as { jobId: string };
       localStorage.setItem(`jd-${jobId}`, jobDescription);
+
+      // In dev mode, persist run metadata to local SQLite for review at /dev/runs.
+      // Fire-and-forget — do not block navigation.
+      if (process.env.NODE_ENV === "development") {
+        void fetch("/api/dev/runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId,
+            submittedAt: new Date().toISOString(),
+            resumeText: masterResume,
+            jdText: jobDescription,
+            companyInfo: companyInfo || null,
+          }),
+        });
+      }
+
       router.push(`/jobs/${jobId}`);
     } catch {
       setErrors({ form: "Could not reach the server. Please check your connection." });
@@ -203,6 +220,14 @@ export default function HomePage() {
           <p className="text-center text-sm text-muted-foreground">
             Your data is processed securely and deleted after 30 days. No account required.
           </p>
+
+          {process.env.NODE_ENV === "development" && (
+            <p className="text-center text-xs text-muted-foreground/60">
+              <a href="/dev/runs" className="hover:text-muted-foreground transition-colors underline underline-offset-2">
+                View previous runs →
+              </a>
+            </p>
+          )}
         </form>
       </div>
     </main>
