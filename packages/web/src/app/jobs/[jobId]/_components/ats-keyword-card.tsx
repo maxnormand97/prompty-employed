@@ -20,10 +20,11 @@ export function AtsKeywordCard({
 
   const cvLower = (tailoredCV ?? "").toLowerCase();
 
-  function keywordPresent(kw: string): boolean {
+  // Pre-compile one regex per keyword (both kw and cvLower are already lowercase)
+  const keywordRegexes = keywords.map((kw) => {
     const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`\\b${escaped}\\b`, "i").test(cvLower);
-  }
+    return { kw, present: new RegExp(`\\b${escaped}\\b`).test(cvLower) };
+  });
 
   return (
     <Card>
@@ -38,11 +39,11 @@ export function AtsKeywordCard({
       <Separator />
       <CardContent className="pt-5 space-y-3">
         <div className="flex flex-wrap gap-2">
-          {keywords.map((kw) => (
+          {keywordRegexes.map(({ kw, present }) => (
             <span
               key={kw}
               className={`rounded-full px-3 py-1 text-sm font-medium border ${
-                keywordPresent(kw)
+                present
                   ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
                   : "bg-red-500/10 text-red-400 border-red-500/30"
               }`}
