@@ -1,3 +1,6 @@
+"use client";
+
+import { useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -15,16 +18,18 @@ export function AtsKeywordCard({
   jdText: string;
   tailoredCV?: string;
 }) {
-  const keywords = extractKeywords(jdText);
+  const keywords = useMemo(() => extractKeywords(jdText), [jdText]);
+  const cvLower = useMemo(() => (tailoredCV ?? "").toLowerCase(), [tailoredCV]);
+  const keywordEntries = useMemo(
+    () =>
+      keywords.map((kw) => {
+        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return { kw, present: new RegExp(`\\b${escaped}\\b`).test(cvLower) };
+      }),
+    [keywords, cvLower]
+  );
+
   if (keywords.length === 0) return null;
-
-  const cvLower = (tailoredCV ?? "").toLowerCase();
-
-  // Pre-compile one regex per keyword (both kw and cvLower are already lowercase)
-  const keywordRegexes = keywords.map((kw) => {
-    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return { kw, present: new RegExp(`\\b${escaped}\\b`).test(cvLower) };
-  });
 
   return (
     <Card>
@@ -39,7 +44,7 @@ export function AtsKeywordCard({
       <Separator />
       <CardContent className="pt-5 space-y-3">
         <div className="flex flex-wrap gap-2">
-          {keywordRegexes.map(({ kw, present }) => (
+          {keywordEntries.map(({ kw, present }) => (
             <span
               key={kw}
               className={`rounded-full px-3 py-1 text-sm font-medium border ${
