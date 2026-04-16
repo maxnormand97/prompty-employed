@@ -33,7 +33,14 @@ export async function GET(
   const run = getRun(jobId);
   if (!run) return notFound();
 
-  const result = run.result_json ? (JSON.parse(run.result_json) as unknown) : null;
+  let result: unknown = null;
+  if (run.result_json) {
+    try {
+      result = JSON.parse(run.result_json) as unknown;
+    } catch {
+      result = null;
+    }
+  }
 
   return NextResponse.json({
     job_id: run.job_id,
