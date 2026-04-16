@@ -36,6 +36,14 @@ function makeRequest(method: string, body: unknown = null): NextRequest {
   });
 }
 
+function makeRawRequest(method: string, rawBody: string): NextRequest {
+  return new NextRequest(`http://localhost/api/dev/runs`, {
+    method,
+    body: rawBody,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("dev/runs route — production guard", () => {
   const originalEnv = process.env.NODE_ENV;
 
@@ -150,6 +158,12 @@ describe("POST /api/dev/runs", () => {
     expect(mockUpsertRun).not.toHaveBeenCalled();
   });
 
+  it("returns 400 for malformed JSON body", async () => {
+    const res = await POST(makeRawRequest("POST", "{invalid json"));
+    expect(res.status).toBe(400);
+    expect(mockUpsertRun).not.toHaveBeenCalled();
+  });
+
   it("stores null for optional fields when they are omitted", async () => {
     const res = await POST(makeRequest("POST", { jobId: VALID_UUID }));
     expect(res.status).toBe(200);
@@ -171,7 +185,7 @@ describe("PATCH /api/dev/runs", () => {
   });
 
   it("calls upsertRun with result fields and returns { ok: true }", async () => {
-    const result = { fitVerdict: "FIT", fitScore: 76 } as Parameters<typeof mockUpsertRun>[0]["result_json"] extends string | null ? never : { fitVerdict: string; fitScore: number };
+    const result: { fitVerdict: string; fitScore: number } = { fitVerdict: "FIT", fitScore: 76 };
     const body = { jobId: VALID_UUID, result };
 
     const res = await PATCH(makeRequest("PATCH", body));
@@ -191,6 +205,12 @@ describe("PATCH /api/dev/runs", () => {
 
   it("returns 400 for an invalid UUID", async () => {
     const res = await PATCH(makeRequest("PATCH", { jobId: "bad" }));
+    expect(res.status).toBe(400);
+    expect(mockUpsertRun).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for malformed JSON body", async () => {
+    const res = await PATCH(makeRawRequest("PATCH", "{invalid json"));
     expect(res.status).toBe(400);
     expect(mockUpsertRun).not.toHaveBeenCalled();
   });

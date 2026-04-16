@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { listRuns } from "@/lib/server/dev-db";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -11,6 +10,7 @@ export default async function DevRunsPage() {
     redirect("/");
   }
 
+  const { listRuns } = await import("@/lib/server/dev-db");
   const runs = listRuns();
 
   return (

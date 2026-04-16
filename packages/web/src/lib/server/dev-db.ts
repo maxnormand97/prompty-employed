@@ -64,7 +64,6 @@ const stmtUpsert = db.prepare<RunRow>(`
   INSERT INTO runs (job_id, submitted_at, completed_at, fit_verdict, fit_score, resume_text, jd_text, company_info, result_json)
   VALUES (@job_id, @submitted_at, @completed_at, @fit_verdict, @fit_score, @resume_text, @jd_text, @company_info, @result_json)
   ON CONFLICT(job_id) DO UPDATE SET
-    submitted_at  = COALESCE(@submitted_at,  submitted_at),
     completed_at  = COALESCE(@completed_at,  completed_at),
     fit_verdict   = COALESCE(@fit_verdict,   fit_verdict),
     fit_score     = COALESCE(@fit_score,     fit_score),

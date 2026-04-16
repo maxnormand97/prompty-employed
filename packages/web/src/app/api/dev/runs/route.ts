@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { upsertRun, listRuns, deleteAllRuns } from "@/lib/server/dev-db";
 import type { TailoredOutput } from "@/lib/types";
 
 const UUID_RE =
@@ -13,6 +12,7 @@ function isDev() {
 export async function GET() {
   if (!isDev()) return NextResponse.json({ error: "Not Found" }, { status: 404 });
 
+  const { listRuns } = await import("@/lib/server/dev-db");
   const rows = listRuns();
   return NextResponse.json(rows);
 }
@@ -21,7 +21,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   if (!isDev()) return NextResponse.json({ error: "Not Found" }, { status: 404 });
 
-  const body = (await request.json()) as {
+  let body: {
     jobId?: unknown;
     submittedAt?: unknown;
     resumeText?: unknown;
@@ -29,6 +29,11 @@ export async function POST(request: NextRequest) {
     companyInfo?: unknown;
     result?: unknown;
   };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   const jobId = body.jobId;
   if (typeof jobId !== "string" || !UUID_RE.test(jobId)) {
@@ -37,6 +42,7 @@ export async function POST(request: NextRequest) {
 
   const submittedAt = typeof body.submittedAt === "string" ? body.submittedAt : new Date().toISOString();
 
+  const { upsertRun } = await import("@/lib/server/dev-db");
   upsertRun({
     job_id: jobId,
     submitted_at: submittedAt,
@@ -53,7 +59,12 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   if (!isDev()) return NextResponse.json({ error: "Not Found" }, { status: 404 });
 
-  const body = (await request.json()) as { jobId?: unknown; result?: unknown };
+  let body: { jobId?: unknown; result?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   const jobId = body.jobId;
   if (typeof jobId !== "string" || !UUID_RE.test(jobId)) {
@@ -62,9 +73,10 @@ export async function PATCH(request: NextRequest) {
 
   const result = body.result as TailoredOutput | undefined;
 
+  const { upsertRun } = await import("@/lib/server/dev-db");
   upsertRun({
     job_id: jobId,
-    submitted_at: new Date().toISOString(), // will be ignored by COALESCE if row exists
+    submitted_at: new Date().toISOString(),
     result_json: result != null ? JSON.stringify(result) : null,
     completed_at: result != null ? new Date().toISOString() : null,
     fit_verdict: result?.fitVerdict ?? null,
@@ -78,6 +90,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE() {
   if (!isDev()) return NextResponse.json({ error: "Not Found" }, { status: 404 });
 
+  const { deleteAllRuns } = await import("@/lib/server/dev-db");
   deleteAllRuns();
   return NextResponse.json({ ok: true });
 }
