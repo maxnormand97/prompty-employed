@@ -22,6 +22,8 @@ export function ScorecardCard({
 }) {
   const strengths = result.suggestedImprovements.filter((tip) => POSITIVE_WORDS.test(tip));
   const quickWins = result.suggestedImprovements.filter((tip) => !POSITIVE_WORDS.test(tip));
+  const fitBand = scoreBand(result.fitScore);
+  const likelihoodBand = scoreBand(result.likelihoodScore);
 
   return (
     <Card>
@@ -39,17 +41,15 @@ export function ScorecardCard({
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col items-center gap-3 rounded-lg border border-border/60 bg-card p-6">
             <ScoreRing score={result.fitScore} label="CV Fit Score" color="violet" />
-            <span className={`text-sm font-semibold ${scoreBand(result.fitScore).className}`}>
-              {scoreBand(result.fitScore).label}
+            <span className={`text-sm font-semibold ${fitBand.className}`}>
+              {fitBand.label}
             </span>
             <p className="text-center text-base text-muted-foreground">{result.fitRationale}</p>
           </div>
           <div className="flex flex-col items-center gap-3 rounded-lg border border-border/60 bg-card p-6">
             <ScoreRing score={result.likelihoodScore} label="Likelihood of Hire" color="emerald" />
-            <span
-              className={`text-sm font-semibold ${scoreBand(result.likelihoodScore).className}`}
-            >
-              {scoreBand(result.likelihoodScore).label}
+            <span className={`text-sm font-semibold ${likelihoodBand.className}`}>
+              {likelihoodBand.label}
             </span>
             <p className="text-center text-base text-muted-foreground">
               {result.likelihoodRationale}

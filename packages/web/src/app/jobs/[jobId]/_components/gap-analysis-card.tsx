@@ -48,7 +48,7 @@ export function GapAnalysisCard({
         ) : (
           <ol className="space-y-6">
             {gapAnalysis.map((gap, i) => (
-              <li key={i} className="space-y-2">
+              <li key={`${gap.priority}-${gap.gap}`} className="space-y-2">
                 <div className="flex items-start gap-3">
                   <PriorityBadge priority={gap.priority} />
                   <p className="text-base font-semibold leading-snug">{gap.gap}</p>

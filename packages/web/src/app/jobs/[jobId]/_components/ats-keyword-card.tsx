@@ -20,6 +20,11 @@ export function AtsKeywordCard({
 
   const cvLower = (tailoredCV ?? "").toLowerCase();
 
+  function keywordPresent(kw: string): boolean {
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\b${escaped}\\b`, "i").test(cvLower);
+  }
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -37,7 +42,7 @@ export function AtsKeywordCard({
             <span
               key={kw}
               className={`rounded-full px-3 py-1 text-sm font-medium border ${
-                cvLower.includes(kw)
+                keywordPresent(kw)
                   ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
                   : "bg-red-500/10 text-red-400 border-red-500/30"
               }`}

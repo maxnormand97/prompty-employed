@@ -5,7 +5,9 @@ export function downloadMarkdown(content: string, filename: string): void {
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 0);
 }
 
 export function stripMarkdown(md: string): string {

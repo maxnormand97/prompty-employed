@@ -28,7 +28,7 @@ export function NextStepsCard({ gapAnalysis }: { gapAnalysis: GapAdvice[] }) {
       <CardContent className="pt-5">
         <ol className="space-y-4">
           {actions.map((gap, i) => (
-            <li key={i} className="flex items-start gap-3">
+            <li key={`${gap.priority}-${gap.gap}-${gap.advice}`} className="flex items-start gap-3">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-sm font-bold text-violet-300">
                 {i + 1}
               </span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { JobStatus, TailoredOutput } from "@/lib/types";
 
 type SSEPayload =
@@ -20,8 +20,10 @@ export function useJobStream(jobId: string): JobStreamState {
   const [status, setStatus] = useState<JobStatus>("PENDING");
   const [result, setResult] = useState<TailoredOutput | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
-  const [jdText] = useState(() =>
-    typeof window !== "undefined" ? (window.localStorage.getItem(`jd-${jobId}`) ?? "") : ""
+  const jdText = useMemo(
+    () =>
+      typeof window !== "undefined" ? (window.localStorage.getItem(`jd-${jobId}`) ?? "") : "",
+    [jobId]
   );
   const resultsRef = useRef<HTMLDivElement>(null);
   const hasScrolled = useRef(false);
