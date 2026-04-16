@@ -46,6 +46,16 @@ export function useJobStream(jobId: string): JobStreamState {
       if (payload.status === "COMPLETE") {
         setResult(payload.result);
         es.close();
+
+        // Fire-and-forget: attach the result to the dev SQLite row.
+        if (process.env.NODE_ENV === "development") {
+          fetch("/api/dev/runs", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jobId, result: payload.result }),
+          }).catch(() => { /* best-effort, ignore errors */ });
+        }
+
         if (!hasScrolled.current) {
           hasScrolled.current = true;
           setTimeout(() => {
