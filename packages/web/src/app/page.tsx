@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { JobSubmissionSchema } from "@/lib/types";
+import { FormField } from "@/app/_components/form-field";
 
 const RESUME_MIN = 200;
 const RESUME_MAX = 15000;
@@ -71,6 +71,7 @@ export default function HomePage() {
       }
 
       const { jobId } = (await res.json()) as { jobId: string };
+      localStorage.setItem(`jd-${jobId}`, jobDescription);
       router.push(`/jobs/${jobId}`);
     } catch {
       setErrors({ form: "Could not reach the server. Please check your connection." });
@@ -78,10 +79,6 @@ export default function HomePage() {
       setSubmitting(false);
     }
   }
-
-  const resumeCount = masterResume.length;
-  const jdCount = jobDescription.length;
-  const companyCount = companyInfo.length;
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-4 py-16">
@@ -115,138 +112,50 @@ export default function HomePage() {
 
         {/* ── Form ──────────────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} noValidate className="space-y-6">
-          {/* Master Resume */}
-          <div className="space-y-2">
-            <div className="flex items-baseline justify-between">
-              <label
-                htmlFor="masterResume"
-                className="text-sm font-medium text-foreground"
-              >
-                Your Master Resume / Experience List
-              </label>
-              <span
-                className={`text-sm tabular-nums ${
-                  resumeCount > RESUME_MAX
-                    ? "text-destructive"
-                    : resumeCount >= RESUME_MIN
-                    ? "text-emerald-400"
-                    : "text-muted-foreground"
-                }`}
-              >
-                {resumeCount.toLocaleString()} / {RESUME_MAX.toLocaleString()}
-              </span>
-            </div>
-            <Textarea
-              id="masterResume"
-              name="masterResume"
-              placeholder="Paste your full work history, skills, and achievements — all roles, not just the most recent. The more detail, the better the tailoring."
-              value={masterResume}
-              onChange={(e) => {
-                setMasterResume(e.target.value);
-                if (errors.masterResume)
-                  setErrors((p) => ({ ...p, masterResume: undefined }));
-              }}
-              rows={10}
-              className="resize-y font-mono text-base leading-relaxed"
-              aria-describedby={errors.masterResume ? "resume-error" : undefined}
-              aria-invalid={!!errors.masterResume}
-              disabled={submitting}
-            />
-            {errors.masterResume && (
-              <p id="resume-error" className="text-base text-destructive" role="alert">
-                {errors.masterResume}
-              </p>
-            )}
-          </div>
+          <FormField
+            id="masterResume"
+            label="Your Master Resume / Experience List"
+            value={masterResume}
+            onChange={setMasterResume}
+            onClearError={() => setErrors((p) => ({ ...p, masterResume: undefined }))}
+            placeholder="Paste your full work history, skills, and achievements — all roles, not just the most recent. The more detail, the better the tailoring."
+            rows={10}
+            max={RESUME_MAX}
+            minForGreen={RESUME_MIN}
+            error={errors.masterResume}
+            errorId="resume-error"
+            disabled={submitting}
+          />
 
-          {/* Job Description */}
-          <div className="space-y-2">
-            <div className="flex items-baseline justify-between">
-              <label
-                htmlFor="jobDescription"
-                className="text-sm font-medium text-foreground"
-              >
-                Job Description
-              </label>
-              <span
-                className={`text-sm tabular-nums ${
-                  jdCount > JD_MAX
-                    ? "text-destructive"
-                    : jdCount >= JD_MIN
-                    ? "text-emerald-400"
-                    : "text-muted-foreground"
-                }`}
-              >
-                {jdCount.toLocaleString()} / {JD_MAX.toLocaleString()}
-              </span>
-            </div>
-            <Textarea
-              id="jobDescription"
-              name="jobDescription"
-              placeholder="Paste the full job description from Seek, LinkedIn, or the company careers page — including responsibilities, requirements, and any 'nice to haves'."
-              value={jobDescription}
-              onChange={(e) => {
-                setJobDescription(e.target.value);
-                if (errors.jobDescription)
-                  setErrors((p) => ({ ...p, jobDescription: undefined }));
-              }}
-              rows={8}
-              className="resize-y font-mono text-base leading-relaxed"
-              aria-describedby={errors.jobDescription ? "jd-error" : undefined}
-              aria-invalid={!!errors.jobDescription}
-              disabled={submitting}
-            />
-            {errors.jobDescription && (
-              <p id="jd-error" className="text-base text-destructive" role="alert">
-                {errors.jobDescription}
-              </p>
-            )}
-          </div>
+          <FormField
+            id="jobDescription"
+            label="Job Description"
+            value={jobDescription}
+            onChange={setJobDescription}
+            onClearError={() => setErrors((p) => ({ ...p, jobDescription: undefined }))}
+            placeholder="Paste the full job description from Seek, LinkedIn, or the company careers page — including responsibilities, requirements, and any 'nice to haves'."
+            rows={8}
+            max={JD_MAX}
+            minForGreen={JD_MIN}
+            error={errors.jobDescription}
+            errorId="jd-error"
+            disabled={submitting}
+          />
 
-          {/* Company Information (optional) */}
-          <div className="space-y-2">
-            <div className="flex items-baseline justify-between">
-              <label
-                htmlFor="companyInfo"
-                className="text-sm font-medium text-foreground"
-              >
-                Company Information
-                <span className="ml-2 text-xs font-normal text-muted-foreground">(optional)</span>
-              </label>
-              <span
-                className={`text-sm tabular-nums ${
-                  companyCount > COMPANY_MAX
-                    ? "text-destructive"
-                    : companyCount > 0
-                    ? "text-emerald-400"
-                    : "text-muted-foreground"
-                }`}
-              >
-                {companyCount.toLocaleString()} / {COMPANY_MAX.toLocaleString()}
-              </span>
-            </div>
-            <Textarea
-              id="companyInfo"
-              name="companyInfo"
-              placeholder="Add anything you know about the company — their mission, recent news, tech stack, culture, or why you want to work there. This helps personalise the cover letter and brief."
-              value={companyInfo}
-              onChange={(e) => {
-                setCompanyInfo(e.target.value);
-                if (errors.companyInfo)
-                  setErrors((p) => ({ ...p, companyInfo: undefined }));
-              }}
-              rows={5}
-              className="resize-y font-mono text-base leading-relaxed"
-              aria-describedby={errors.companyInfo ? "company-error" : undefined}
-              aria-invalid={!!errors.companyInfo}
-              disabled={submitting}
-            />
-            {errors.companyInfo && (
-              <p id="company-error" className="text-base text-destructive" role="alert">
-                {errors.companyInfo}
-              </p>
-            )}
-          </div>
+          <FormField
+            id="companyInfo"
+            label="Company Information"
+            optional
+            value={companyInfo}
+            onChange={setCompanyInfo}
+            onClearError={() => setErrors((p) => ({ ...p, companyInfo: undefined }))}
+            placeholder="Add anything you know about the company — their mission, recent news, tech stack, culture, or why you want to work there. This helps personalise the cover letter and brief."
+            rows={5}
+            max={COMPANY_MAX}
+            error={errors.companyInfo}
+            errorId="company-error"
+            disabled={submitting}
+          />
 
           {/* Form-level error */}
           {errors.form && (
