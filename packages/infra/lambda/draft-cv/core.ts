@@ -116,10 +116,17 @@ export async function runDraftCV(
       return { jobId, fitVerdict: "NO_FIT", fitReason, s3JobDescKey, s3CompanyInfoKey };
     }
 
-    // 4. Build prompt and call Bedrock for the full draft
+    // 4. Build prompt and call Bedrock for the full draft.
+    // Prefill the assistant turn with "#" to force Claude to start immediately
+    // with the CV markdown heading, preventing any "Here are the two artifacts:"
+    // style preamble from polluting the tailored CV output.
     const draftPrompt = buildDraftPrompt(resume, jobDescription, companyInfo);
     const rawDraftResponse = await invokeBedrockText(bedrock, bedrockModelId, draftPrompt, {
       systemPrompt: DRAFT_SYSTEM_PROMPT,
+      // "#" prefill forces Claude to begin immediately with a Markdown heading,
+      // preventing any "Here are the two artifacts:" style preamble.
+      // The heading itself is stripped from the CV after splitting (see below).
+      prefill: "#",
     });
 
     // Audit: persist draft artefacts for observability and future model training
@@ -139,7 +146,13 @@ export async function runDraftCV(
       throw new Error("Bedrock response missing cover letter delimiter");
     }
 
-    const tailoredCV = rawDraftResponse.slice(0, delimiterIndex).trim();
+    // Strip the auto-generated title heading (e.g. "# Tailored CV") from the top of the CV.
+    // The heading is an artefact of the Claude prefill and is redundant in the UI.
+    const tailoredCV = rawDraftResponse
+      .slice(0, delimiterIndex)
+      .trim()
+      .replace(/^#[^\n]*\n+/, "")
+      .trim();
     const coverLetter = rawDraftResponse.slice(delimiterIndex + DELIMITER.length).trim();
 
     if (!tailoredCV || !coverLetter) {
