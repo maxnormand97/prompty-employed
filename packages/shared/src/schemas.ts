@@ -19,6 +19,11 @@ export const JobSubmissionSchema = z.object({
 
 export type JobSubmission = z.infer<typeof JobSubmissionSchema>;
 
+// ── Shared field schemas ───────────────────────────────────────────────────
+
+export const FitVerdictSchema = z.enum(["FIT", "NO_FIT"]);
+export const Score0to100Schema = z.number().int().min(0).max(100);
+
 // ── Job lifecycle ──────────────────────────────────────────────────────────
 
 export const JobStatusSchema = z.enum([
@@ -39,6 +44,11 @@ export const JobRecordSchema = z.object({
   status: JobStatusSchema,
   s3Key: z.string().optional(),
   errorMessage: z.string().optional(),
+  // Analysis fields written by critique-cv lambda on COMPLETE.
+  // Stored as top-level DynamoDB attributes for efficient list/filter queries
+  // without fetching the full S3 result object.
+  fitVerdict: FitVerdictSchema.optional(),
+  fitScore: Score0to100Schema.optional(),
 });
 
 export type JobRecord = z.infer<typeof JobRecordSchema>;
@@ -71,7 +81,7 @@ export const TailoredOutputSchema = z.object({
   completedAt: z.string().datetime(),
 
   /** "FIT" when the candidate passed pre-screening; "NO_FIT" when they didn't. */
-  fitVerdict: z.enum(["FIT", "NO_FIT"]).optional(),
+  fitVerdict: FitVerdictSchema.optional(),
   /** One-sentence reason populated only on NO_FIT. */
   fitReason: z.string().optional(),
 
@@ -81,9 +91,9 @@ export const TailoredOutputSchema = z.object({
   coverLetter: z.string().min(1).optional(),
 
   critiqueNotes: z.string().min(1),
-  fitScore: z.number().int().min(0).max(100),
+  fitScore: Score0to100Schema,
   fitRationale: z.string(),
-  likelihoodScore: z.number().int().min(0).max(100),
+  likelihoodScore: Score0to100Schema,
   likelihoodRationale: z.string(),
   suggestedImprovements: z.array(z.string()),
   gapAnalysis: z.array(GapAdviceSchema),

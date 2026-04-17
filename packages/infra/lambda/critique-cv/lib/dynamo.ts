@@ -23,19 +23,25 @@ export async function setJobComplete(
   tableName: string,
   jobId: string,
   s3AnalysisKey: string,
-  completedAt: string
+  completedAt: string,
+  fitVerdict: "FIT" | "NO_FIT" | undefined,
+  fitScore: number
 ): Promise<void> {
-  log("info", "Setting job status to COMPLETE", { jobId, s3AnalysisKey, completedAt });
+  log("info", "Setting job status to COMPLETE", { jobId, s3AnalysisKey, completedAt, fitVerdict, fitScore });
   await dynamo.send(
     new UpdateItemCommand({
       TableName: tableName,
       Key: { jobId: { S: jobId } },
-      UpdateExpression: "SET #s = :s, completedAt = :ca, s3Key = :sk",
+      UpdateExpression:
+        "SET #s = :s, completedAt = :ca, s3Key = :sk, fitScore = :fs" +
+        (fitVerdict ? ", fitVerdict = :fv" : ""),
       ExpressionAttributeNames: { "#s": "status" },
       ExpressionAttributeValues: {
         ":s": { S: "COMPLETE" },
         ":ca": { S: completedAt },
         ":sk": { S: s3AnalysisKey },
+        ":fs": { N: String(fitScore) },
+        ...(fitVerdict ? { ":fv": { S: fitVerdict } } : {}),
       },
     })
   );

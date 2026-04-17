@@ -172,12 +172,13 @@ describe("runDraftCV — FIT path", () => {
     expect(hasFailedCall).toBe(true);
   });
 
-  test("throws and marks job FAILED when draft Bedrock produces empty CV section", async () => {
+  test("throws and marks job FAILED when draft Bedrock produces empty cover letter section (no content after delimiter)", async () => {
     setupDefaultS3();
+    // The cover letter is the part after the delimiter — empty cover letter is a valid error path.
     bedrockMock
       .on(InvokeModelCommand)
       .resolvesOnce({ body: makeBedrockBody(SCREEN_FIT_RESPONSE) as never })
-      .resolves({ body: makeBedrockBody(`${DELIMITER}\n${COVER_LETTER_TEXT}`) as never });
+      .resolves({ body: makeBedrockBody(`${TAILORED_CV_TEXT}\n${DELIMITER}`) as never });
 
     await expect(runDraftCV(MOCK_EVENT, makeClients(), MOCK_ENV)).rejects.toThrow(
       "Bedrock response produced empty CV or cover letter"

@@ -9,6 +9,11 @@ export interface InvokeBedrockOptions {
   systemPrompt?: string;
   /** Max tokens to generate. Defaults to 4096. */
   maxTokens?: number;
+  /**
+   * Pre-filled assistant turn. Claude will continue from this text, preventing
+   * any preamble from appearing before the actual content.
+   */
+  prefill?: string;
 }
 
 export async function invokeBedrockText(
@@ -23,7 +28,10 @@ export async function invokeBedrockText(
     anthropic_version: "bedrock-2023-05-31",
     max_tokens: maxTokens,
     ...(options?.systemPrompt ? { system: options.systemPrompt } : {}),
-    messages: [{ role: "user", content: prompt }],
+    messages: [
+      { role: "user", content: prompt },
+      ...(options?.prefill ? [{ role: "assistant", content: options.prefill }] : []),
+    ],
   });
 
   const response = await bedrock.send(
@@ -39,5 +47,7 @@ export async function invokeBedrockText(
   const text: string = parsed?.content?.[0]?.text;
   if (!text) throw new Error("Bedrock returned an empty or malformed response");
   log("info", "Bedrock response received", { responseLength: text.length });
-  return text;
+  // When a prefill is used Claude continues from after the prefill, so we
+  // prepend it back so the caller always receives the full intended output.
+  return options?.prefill ? options.prefill + text : text;
 }

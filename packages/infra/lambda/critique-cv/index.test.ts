@@ -49,6 +49,7 @@ const MOCK_JOB_DESC = "Senior Software Engineer — TypeScript required";
 const VALID_CRITIQUE_PAYLOAD = {
   critiqueNotes: "Strong alignment with the role requirements.",
   fitScore: 85,
+  fitVerdict: "FIT" as const,
   fitRationale: "The candidate has the required TypeScript and React experience.",
   likelihoodScore: 72,
   likelihoodRationale: "Good match but lacks Storybook experience mentioned in the JD.",
@@ -109,6 +110,7 @@ describe("runCritiqueCV", () => {
     expect(result).toMatchObject({
       jobId: "test-job-001",
       fitScore: 85,
+      fitVerdict: "FIT",
       likelihoodScore: 72,
       critiqueNotes: VALID_CRITIQUE_PAYLOAD.critiqueNotes,
       fitRationale: VALID_CRITIQUE_PAYLOAD.fitRationale,
@@ -180,6 +182,53 @@ describe("runCritiqueCV", () => {
     expect(completeCall?.args[0].input.ExpressionAttributeValues?.[":sk"]?.S).toBe(
       `results/${MOCK_EVENT.jobId}/analysis.json`
     );
+  });
+
+  test("stores fitVerdict and fitScore in the COMPLETE DynamoDB update", async () => {
+    setupDefaultS3Mocks();
+    dynamoMock.on(UpdateItemCommand).resolves({});
+    bedrockMock.on(InvokeModelCommand).resolves({
+      body: makeBedrockBody(JSON.stringify(VALID_CRITIQUE_PAYLOAD)) as never,
+    });
+
+    await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
+
+    const allCalls = dynamoMock.commandCalls(UpdateItemCommand);
+    const completeCall = allCalls.find(
+      (c) => c.args[0].input.ExpressionAttributeValues?.[":s"]?.S === "COMPLETE"
+    );
+    const vals = completeCall?.args[0].input.ExpressionAttributeValues;
+    expect(vals?.[":fv"]?.S).toBe("FIT");
+    expect(vals?.[":fs"]?.N).toBe("85");
+    const updateExpr = completeCall?.args[0].input.UpdateExpression ?? "";
+    expect(updateExpr).toContain("fitScore = :fs");
+    expect(updateExpr).toContain("fitVerdict = :fv");
+  });
+
+  test("omits fitVerdict attribute when Bedrock response has no fitVerdict", async () => {
+    const payloadWithoutVerdict = { ...VALID_CRITIQUE_PAYLOAD };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (payloadWithoutVerdict as any).fitVerdict;
+
+    setupDefaultS3Mocks();
+    dynamoMock.on(UpdateItemCommand).resolves({});
+    bedrockMock.on(InvokeModelCommand).resolves({
+      body: makeBedrockBody(JSON.stringify(payloadWithoutVerdict)) as never,
+    });
+
+    await runCritiqueCV(MOCK_EVENT, makeClients(), MOCK_ENV);
+
+    const allCalls = dynamoMock.commandCalls(UpdateItemCommand);
+    const completeCall = allCalls.find(
+      (c) => c.args[0].input.ExpressionAttributeValues?.[":s"]?.S === "COMPLETE"
+    );
+    const vals = completeCall?.args[0].input.ExpressionAttributeValues;
+    // fitScore always written; fitVerdict absent when not in response
+    expect(vals?.[":fs"]?.N).toBe("85");
+    expect(vals?.[":fv"]).toBeUndefined();
+    const updateExpr = completeCall?.args[0].input.UpdateExpression ?? "";
+    expect(updateExpr).toContain("fitScore = :fs");
+    expect(updateExpr).not.toContain("fitVerdict");
   });
 
   test("throws and marks job FAILED when Bedrock returns non-JSON", async () => {
