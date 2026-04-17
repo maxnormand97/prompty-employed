@@ -200,6 +200,9 @@ describe("runCritiqueCV", () => {
     const vals = completeCall?.args[0].input.ExpressionAttributeValues;
     expect(vals?.[":fv"]?.S).toBe("FIT");
     expect(vals?.[":fs"]?.N).toBe("85");
+    const updateExpr = completeCall?.args[0].input.UpdateExpression ?? "";
+    expect(updateExpr).toContain("fitScore = :fs");
+    expect(updateExpr).toContain("fitVerdict = :fv");
   });
 
   test("omits fitVerdict attribute when Bedrock response has no fitVerdict", async () => {
@@ -223,6 +226,9 @@ describe("runCritiqueCV", () => {
     // fitScore always written; fitVerdict absent when not in response
     expect(vals?.[":fs"]?.N).toBe("85");
     expect(vals?.[":fv"]).toBeUndefined();
+    const updateExpr = completeCall?.args[0].input.UpdateExpression ?? "";
+    expect(updateExpr).toContain("fitScore = :fs");
+    expect(updateExpr).not.toContain("fitVerdict");
   });
 
   test("throws and marks job FAILED when Bedrock returns non-JSON", async () => {
