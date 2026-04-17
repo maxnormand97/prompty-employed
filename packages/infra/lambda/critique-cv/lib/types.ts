@@ -14,6 +14,7 @@ export interface CritiqueCVOutput {
   jobId: string;
   critiqueNotes: string;
   fitScore: number;
+  fitVerdict?: "FIT" | "NO_FIT";
   fitRationale: string;
   likelihoodScore: number;
   likelihoodRationale: string;
@@ -31,6 +32,7 @@ export interface GapAdvice {
 export interface CritiqueResult {
   critiqueNotes: string;
   fitScore: number;
+  fitVerdict?: "FIT" | "NO_FIT";
   fitRationale: string;
   likelihoodScore: number;
   likelihoodRationale: string;

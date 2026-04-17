@@ -39,6 +39,11 @@ export const JobRecordSchema = z.object({
   status: JobStatusSchema,
   s3Key: z.string().optional(),
   errorMessage: z.string().optional(),
+  // Analysis fields written by critique-cv lambda on COMPLETE.
+  // Stored as top-level DynamoDB attributes for efficient list/filter queries
+  // without fetching the full S3 result object.
+  fitVerdict: z.enum(["FIT", "NO_FIT"]).optional(),
+  fitScore: z.number().int().min(0).max(100).optional(),
 });
 
 export type JobRecord = z.infer<typeof JobRecordSchema>;

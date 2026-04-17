@@ -75,8 +75,10 @@ export async function runCritiqueCV(
       JSON.stringify({ ...result, jobId, completedAt }, null, 2)
     );
 
-    // 6. Write s3Key reference to DynamoDB and set status to COMPLETE
-    await setJobComplete(dynamo, jobsTableName, jobId, s3AnalysisKey, completedAt);
+    // 6. Write s3Key, fitVerdict and fitScore to DynamoDB and set status to COMPLETE.
+    // fitVerdict and fitScore are stored as top-level attributes so the jobs table
+    // can be queried/scanned by verdict without fetching the full S3 result.
+    await setJobComplete(dynamo, jobsTableName, jobId, s3AnalysisKey, completedAt, result.fitVerdict, result.fitScore);
 
     log("info", "runCritiqueCV complete", {
       jobId,
@@ -88,6 +90,7 @@ export async function runCritiqueCV(
       jobId,
       critiqueNotes: result.critiqueNotes,
       fitScore: result.fitScore,
+      fitVerdict: result.fitVerdict,
       fitRationale: result.fitRationale,
       likelihoodScore: result.likelihoodScore,
       likelihoodRationale: result.likelihoodRationale,

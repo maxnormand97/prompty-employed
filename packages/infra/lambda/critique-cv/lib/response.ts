@@ -64,6 +64,10 @@ export function parseCritiqueResponse(raw: string): CritiqueResult {
   return {
     critiqueNotes: result.critiqueNotes as string,
     fitScore,
+    fitVerdict:
+      result.fitVerdict === "FIT" || result.fitVerdict === "NO_FIT"
+        ? (result.fitVerdict as "FIT" | "NO_FIT")
+        : undefined,
     fitRationale: result.fitRationale as string,
     likelihoodScore,
     likelihoodRationale: result.likelihoodRationale as string,
