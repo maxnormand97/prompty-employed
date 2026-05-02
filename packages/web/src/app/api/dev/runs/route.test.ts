@@ -91,6 +91,8 @@ describe("GET /api/dev/runs", () => {
         completed_at: "2026-04-16T10:01:00.000Z",
         fit_verdict: "FIT",
         fit_score: 82,
+        jd_excerpt: "job description",
+        resume_first_line: "my resume",
       },
     ];
     mockListRuns.mockReturnValueOnce(summaries);

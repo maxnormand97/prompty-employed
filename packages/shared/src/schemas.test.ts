@@ -4,6 +4,7 @@ import {
   JobSubmissionSchema,
   JobStatusSchema,
   JobRecordSchema,
+  ResumeRecordSchema,
   StepFunctionInputSchema,
   TailoredOutputSchema,
 } from './schemas';
@@ -99,6 +100,11 @@ describe('JobSubmissionSchema — companyInfo (optional)', () => {
   it('accepts a submission with a valid companyInfo string', () => {
     const result = JobSubmissionSchema.safeParse({
       ...base,
+      selectedResumeId: 'resume-123',
+      resumeName: 'Platform resume',
+      resumeSource: 'upload',
+      resumeFileType: 'pdf',
+      resumeMimeType: 'application/pdf',
       companyInfo: 'Acme Corp — builds best-in-class widgets.',
     });
     expect(result.success).toBe(true);
@@ -136,6 +142,11 @@ describe('StepFunctionInputSchema', () => {
   it('accepts a valid input with s3CompanyInfoKey', () => {
     const result = StepFunctionInputSchema.safeParse({
       ...base,
+      selectedResumeId: 'resume-123',
+      resumeName: 'Platform resume',
+      resumeSource: 'upload',
+      resumeFileType: 'pdf',
+      resumeMimeType: 'application/pdf',
       s3CompanyInfoKey: 'inputs/abc/company-info.txt',
     });
     expect(result.success).toBe(true);
@@ -145,6 +156,36 @@ describe('StepFunctionInputSchema', () => {
     expect(StepFunctionInputSchema.safeParse({ ...base, jobId: 'not-a-uuid' }).success).toBe(
       false
     );
+  });
+});
+
+describe('ResumeRecordSchema', () => {
+  const base = {
+    id: 'resume-123',
+    name: 'Platform Engineer Resume',
+    text: 'A'.repeat(200),
+    source: 'upload',
+    fileType: 'pdf',
+    mimeType: 'application/pdf',
+    uploadedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  it('accepts a valid resume record', () => {
+    expect(ResumeRecordSchema.safeParse(base).success).toBe(true);
+  });
+
+  it('accepts a resume record with lastUsedAt', () => {
+    expect(
+      ResumeRecordSchema.safeParse({
+        ...base,
+        lastUsedAt: new Date().toISOString(),
+      }).success
+    ).toBe(true);
+  });
+
+  it('rejects a resume record with too-short text', () => {
+    expect(ResumeRecordSchema.safeParse({ ...base, text: 'short' }).success).toBe(false);
   });
 });
 

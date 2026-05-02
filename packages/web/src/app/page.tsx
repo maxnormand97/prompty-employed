@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { JobSubmissionSchema } from "@/lib/types";
 import { FormField } from "@/app/_components/form-field";
+import { ResumePickerCard } from "@/app/_components/resume-picker-card";
+import { getSelectedResumeId, listStoredResumes, markResumeUsed } from "@/lib/resume-library";
 
 const RESUME_MIN = 200;
 const RESUME_MAX = 15000;
@@ -28,6 +31,33 @@ export default function HomePage() {
   const [companyInfo, setCompanyInfo] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
+  const [resubmitBanner, setResubmitBanner] = useState(false);
+
+  // Pre-fill form when navigated here via the "Resubmit" quick action on the
+  // runs list. The run card stores {jobId} in sessionStorage under 'resubmit-data'.
+  useEffect(() => {
+    const raw = sessionStorage.getItem("resubmit-data");
+    if (!raw) return;
+    sessionStorage.removeItem("resubmit-data");
+    let jobId: string | undefined;
+    try {
+      ({ jobId } = JSON.parse(raw) as { jobId?: string });
+    } catch {
+      return;
+    }
+    if (!jobId) return;
+
+    fetch(`/api/dev/runs/${jobId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((detail: { resume_text?: string | null; jd_text?: string | null; company_info?: string | null } | null) => {
+        if (!detail) return;
+        if (detail.resume_text) setMasterResume(detail.resume_text);
+        if (detail.jd_text) setJobDescription(detail.jd_text);
+        if (detail.company_info) setCompanyInfo(detail.company_info);
+        setResubmitBanner(true);
+      })
+      .catch(() => { /* best-effort */ });
+  }, []);
 
   function validate(): FieldErrors {
     const result = JobSubmissionSchema.safeParse({ masterResume, jobDescription, companyInfo: companyInfo || undefined });
@@ -55,10 +85,28 @@ export default function HomePage() {
     setSubmitting(true);
 
     try {
+      const selectedResumeId = getSelectedResumeId();
+      const selectedResume = selectedResumeId
+        ? listStoredResumes().find((resume) => resume.id === selectedResumeId) ?? null
+        : null;
+
       const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ masterResume, jobDescription, ...(companyInfo ? { companyInfo } : {}) }),
+        body: JSON.stringify({
+          masterResume,
+          ...(selectedResume
+            ? {
+                selectedResumeId: selectedResume.id,
+                resumeName: selectedResume.name,
+                resumeSource: selectedResume.source,
+                ...(selectedResume.fileType ? { resumeFileType: selectedResume.fileType } : {}),
+                ...(selectedResume.mimeType ? { resumeMimeType: selectedResume.mimeType } : {}),
+              }
+            : {}),
+          jobDescription,
+          ...(companyInfo ? { companyInfo } : {}),
+        }),
       });
 
       if (!res.ok) {
@@ -72,6 +120,9 @@ export default function HomePage() {
 
       const { jobId } = (await res.json()) as { jobId: string };
       localStorage.setItem(`jd-${jobId}`, jobDescription);
+      if (selectedResumeId) {
+        markResumeUsed(selectedResumeId);
+      }
 
       // Fire-and-forget: persist inputs to local SQLite for dev review.
       // Only runs in development — no blocking of navigation.
@@ -111,6 +162,11 @@ export default function HomePage() {
       <div className="w-full max-w-2xl space-y-10">
         {/* ── Hero ──────────────────────────────────────────────────── */}
         <div className="text-center space-y-3">
+          <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground">
+            <Link href="/resumes" className="hover:text-foreground transition-colors">
+              Manage resumes
+            </Link>
+          </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-300 mb-2">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
@@ -129,6 +185,24 @@ export default function HomePage() {
 
         {/* ── Form ──────────────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} noValidate className="space-y-6">
+          {/* Resubmit banner */}
+          {resubmitBanner && (
+            <Alert className="border-violet-500/30 bg-violet-500/10 text-violet-200">
+              <AlertDescription className="flex items-center justify-between gap-4">
+                <span>Previous run inputs pre-filled. Edit as needed before resubmitting.</span>
+                <button
+                  type="button"
+                  onClick={() => setResubmitBanner(false)}
+                  className="text-xs opacity-60 hover:opacity-100 transition-opacity shrink-0"
+                  aria-label="Dismiss"
+                >
+                  ✕
+                </button>
+              </AlertDescription>
+            </Alert>
+          )}
+          <ResumePickerCard onResumeTextChange={setMasterResume} />
+
           <FormField
             id="masterResume"
             label="Your Master Resume / Experience List"

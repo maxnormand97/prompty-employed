@@ -33,6 +33,21 @@
 - **Dark mode** support is available via Tailwind theming.
 - **Accessibility:** All components should be accessible by default; `@base-ui/react` is built with a11y in mind.
 
+## Resume Management UI
+
+The resume management feature adds a second top-level user surface alongside the application form:
+
+- A compact **Resume Library** card on the homepage for quick selection and upload
+- A dedicated **`/resumes` page** for full resume management
+
+These surfaces should keep the same visual language as the rest of the app:
+
+- Use existing `Card`, `Button`, `Alert`, `Badge`, `Textarea`, and `Input` primitives
+- Prefer concise status copy and obvious primary actions over dense controls
+- Keep resume metadata lightweight and readable: name, source, file type, updated date, and short excerpt
+- Use soft emphasis for the currently selected resume rather than a heavy dashboard treatment
+- Preserve the single-purpose feel of the homepage even when the resume picker is present
+
 ---
 
 ## Example Stack Setup (Reference)

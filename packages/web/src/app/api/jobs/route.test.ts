@@ -304,4 +304,34 @@ describe('POST /api/jobs', () => {
       expect(keys.some((k) => k.includes('company-info'))).toBe(true);
     });
   });
+
+  describe('resume metadata passthrough', () => {
+    const PAYLOAD_WITH_RESUME_METADATA = {
+      ...VALID_PAYLOAD,
+      selectedResumeId: 'resume-123',
+      resumeName: 'Platform Resume',
+      resumeSource: 'upload',
+      resumeFileType: 'pdf',
+      resumeMimeType: 'application/pdf',
+    };
+
+    it('accepts an otherwise valid payload with selected resume metadata', async () => {
+      const res = await POST(makeAuthRequest(PAYLOAD_WITH_RESUME_METADATA));
+      expect(res.status).toBe(201);
+    });
+
+    it('passes selected resume metadata through to the Step Functions input', async () => {
+      await POST(makeAuthRequest(PAYLOAD_WITH_RESUME_METADATA));
+      const sfnCall = jest.mocked(StartExecutionCommand).mock.calls[0][0];
+      const sfnInput = JSON.parse(sfnCall.input as string) as Record<string, unknown>;
+
+      expect(sfnInput).toMatchObject({
+        selectedResumeId: 'resume-123',
+        resumeName: 'Platform Resume',
+        resumeSource: 'upload',
+        resumeFileType: 'pdf',
+        resumeMimeType: 'application/pdf',
+      });
+    });
+  });
 });

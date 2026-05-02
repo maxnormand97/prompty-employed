@@ -51,6 +51,10 @@ export interface RunSummary {
   completed_at: string | null;
   fit_verdict: string | null;
   fit_score: number | null;
+  /** First 300 chars of jd_text — enough to extract a title + one-line summary. */
+  jd_excerpt: string | null;
+  /** First 150 chars of resume_text — used to infer a resume identity label. */
+  resume_first_line: string | null;
 }
 
 export interface RunDetail extends RunSummary {
@@ -74,7 +78,9 @@ const stmtUpsert = db.prepare<RunRow>(`
 `);
 
 const stmtList = db.prepare<[], RunSummary>(`
-  SELECT job_id, submitted_at, completed_at, fit_verdict, fit_score
+  SELECT job_id, submitted_at, completed_at, fit_verdict, fit_score,
+         SUBSTR(jd_text, 1, 300)     AS jd_excerpt,
+         SUBSTR(resume_text, 1, 150) AS resume_first_line
   FROM runs
   ORDER BY submitted_at DESC
 `);
@@ -125,6 +131,8 @@ export function getRun(jobId: string): RunDetail | null {
     completed_at: row.completed_at ?? null,
     fit_verdict: row.fit_verdict ?? null,
     fit_score: row.fit_score ?? null,
+    jd_excerpt: row.jd_text ? row.jd_text.slice(0, 300) : null,
+    resume_first_line: row.resume_text ? row.resume_text.slice(0, 150) : null,
     resume_text: row.resume_text ?? null,
     jd_text: row.jd_text ?? null,
     company_info: row.company_info ?? null,
