@@ -222,6 +222,34 @@ describe('TailoredOutputSchema — companySummary (optional)', () => {
   it('rejects a result with a fitScore out of range', () => {
     expect(TailoredOutputSchema.safeParse({ ...base, fitScore: 101 }).success).toBe(false);
   });
+
+  it('accepts decision-grade optional fields', () => {
+    const result = TailoredOutputSchema.safeParse({
+      ...base,
+      redFlags: [
+        {
+          type: 'STABILITY_RISK',
+          severity: 'HIGH',
+          description: 'Role churn is high for a non-contractor profile in the last four years.',
+        },
+      ],
+      hardFloorTriggers: ['HF_STABILITY_ROLE_CHURN'],
+      normalizationSummary: {
+        seniority: 'SENIOR',
+        requiredYears: 5,
+        degreeRequirement: 'MASTERS',
+        uncertainLines: ['Nice to have: Rust'],
+      },
+      policyAdjustments: [
+        {
+          ruleId: 'PENALTY_NO_MEASURABLE_OUTCOMES',
+          penalty: 10,
+          reason: 'Senior/lead profile without measurable outcomes evidence.',
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('TailoredOutputSchema — NO_FIT results', () => {

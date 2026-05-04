@@ -328,19 +328,18 @@ describe("runDraftCV — NO_FIT path", () => {
     expect(writtenKeys).not.toContain("results/test-job-001/audit/draft-raw-response.txt");
   });
 
-  test("treats invalid JSON screen response as FIT and proceeds with draft", async () => {
+  test("treats invalid JSON screen response as strict-safe NO_FIT", async () => {
     setupDefaultS3();
     bedrockMock
       .on(InvokeModelCommand)
-      .resolvesOnce({ body: makeBedrockBody("not valid json at all") as never })
-      .resolves({
-        body: makeBedrockBody(`${TAILORED_CV_TEXT}\n${DELIMITER}\n${COVER_LETTER_TEXT}`) as never,
-      });
+      .resolvesOnce({ body: makeBedrockBody("not valid json at all") as never });
 
     const result = await runDraftCV(MOCK_EVENT, makeClients(), MOCK_ENV);
 
-    expect(result.fitVerdict).toBe("FIT");
-    expect(result.s3TailoredCVKey).toBe("results/test-job-001/tailored-cv.md");
+    expect(result.fitVerdict).toBe("NO_FIT");
+    expect(result.fitReason).toContain("Strict-safe fallback");
+    expect(result.s3TailoredCVKey).toBeUndefined();
+    expect(bedrockMock.commandCalls(InvokeModelCommand)).toHaveLength(1);
   });
 
   test("treats a screen verdict of YES as FIT even with a reason", async () => {
