@@ -12,6 +12,8 @@ import { mockClient } from "aws-sdk-client-mock";
 
 import { buildCritiquePrompt } from "./lib/prompt";
 import { parseCritiqueResponse } from "./lib/response";
+import { normalizeJobDescription } from "./lib/normalization";
+import { enforceCritiquePolicy } from "./lib/policy";
 import { CritiqueCVClients, CritiqueCVEnv, CritiqueCVInput } from "./lib/types";
 import { runCritiqueCV } from "./core";
 
@@ -111,7 +113,7 @@ describe("runCritiqueCV", () => {
       jobId: "test-job-001",
       fitScore: 85,
       fitVerdict: "FIT",
-      likelihoodScore: 72,
+      likelihoodScore: 62,
       critiqueNotes: VALID_CRITIQUE_PAYLOAD.critiqueNotes,
       fitRationale: VALID_CRITIQUE_PAYLOAD.fitRationale,
       likelihoodRationale: VALID_CRITIQUE_PAYLOAD.likelihoodRationale,
@@ -361,6 +363,140 @@ describe("parseCritiqueResponse", () => {
       JSON.stringify({ ...VALID_CRITIQUE_PAYLOAD, suggestedImprovements: [] })
     );
     expect(result.suggestedImprovements).toEqual([]);
+  });
+});
+
+describe("normalizeJobDescription", () => {
+  test("extracts seniority, years, stack, compliance and uncertainty markers", () => {
+    const jd = [
+      "Senior FinTech Platform Engineer",
+      "Requires 6+ years experience in fintech domain.",
+      "Mandatory stack: TypeScript, SQL, AWS, microservices.",
+      "Must understand PCI-DSS and high availability systems.",
+      "Nice to have: Rust and kernel-level debugging.",
+      "Master's degree required.",
+    ].join("\n");
+
+    const normalized = normalizeJobDescription(jd);
+    expect(normalized.seniority).toBe("SENIOR");
+    expect(normalized.requiredYears).toBe(6);
+    expect(normalized.domainSignals).toContain("fintech");
+    expect(normalized.complianceSignals).toContain("pci-dss");
+    expect(normalized.mandatoryStack).toEqual(
+      expect.arrayContaining(["typescript", "sql", "aws", "microservices"])
+    );
+    expect(normalized.degreeRequirement).toBe("MASTERS");
+    expect(normalized.uncertainLines.length).toBeGreaterThan(0);
+  });
+});
+
+describe("enforceCritiquePolicy", () => {
+  function baseModelResult() {
+    return {
+      critiqueNotes: "baseline",
+      fitScore: 88,
+      fitRationale: "good",
+      likelihoodScore: 86,
+      likelihoodRationale: "good",
+      suggestedImprovements: [],
+      gapAnalysis: [],
+    };
+  }
+
+  test("applies domain floors and complex-domain penalty when domain evidence is missing", () => {
+    const normalization = normalizeJobDescription(
+      "Senior FinTech engineer with 5+ years in fintech. TypeScript required."
+    );
+    const { result } = enforceCritiquePolicy({
+      modelResult: baseModelResult(),
+      normalization,
+      tailoredCV: "Senior software engineer with TypeScript and React.",
+      coverLetter: "I have built SaaS products.",
+      jobDescription: normalization.rawJobDescription,
+    });
+
+    expect(result.fitScore).toBeLessThanOrEqual(20);
+    expect(result.likelihoodScore).toBeLessThanOrEqual(20);
+    expect(result.hardFloorTriggers).toContain("HF_NO_PRIMARY_DOMAIN_EVIDENCE");
+    expect(result.hardFloorTriggers).toContain("HF_DOMAIN_YEARS_SHORTFALL");
+    expect(result.policyAdjustments?.some((p) => p.ruleId === "PENALTY_COMPLEX_DOMAIN_GAP")).toBe(
+      true
+    );
+  });
+
+  test("applies degree floor when JD requires masters and CV only shows bachelors", () => {
+    const normalization = normalizeJobDescription(
+      "Lead engineer role. Master's degree required. TypeScript and AWS required."
+    );
+    const { result } = enforceCritiquePolicy({
+      modelResult: baseModelResult(),
+      normalization,
+      tailoredCV:
+        "Education: Bachelor's in Computer Science. Experience includes TypeScript and AWS projects.",
+      coverLetter: "I am excited for this role.",
+      jobDescription: normalization.rawJobDescription,
+    });
+
+    expect(result.likelihoodScore).toBeLessThanOrEqual(35);
+    expect(result.hardFloorTriggers).toContain("HF_REQUIRED_MASTERS_MISSING");
+  });
+
+  test("applies scale mismatch clamp and red flag when scale signals lack evidence", () => {
+    const normalization = normalizeJobDescription(
+      "Senior backend engineer. Microservices and distributed systems experience required."
+    );
+    const { result } = enforceCritiquePolicy({
+      modelResult: baseModelResult(),
+      normalization,
+      tailoredCV:
+        "Built internal tools and small website dashboards for operations teams in a startup.",
+      coverLetter: "I value pragmatic engineering.",
+      jobDescription: normalization.rawJobDescription,
+    });
+
+    expect(result.fitScore).toBeLessThanOrEqual(50);
+    expect(result.hardFloorTriggers).toContain("HF_SCALE_MISMATCH");
+    expect(result.redFlags?.some((f) => f.type === "SCALE_MISMATCH")).toBe(true);
+  });
+
+  test("applies stability floors for consecutive short roles and role churn", () => {
+    const normalization = normalizeJobDescription("Senior platform engineer with TypeScript and AWS.");
+    const currentYear = new Date().getUTCFullYear();
+    const cv = [
+      `Role A ${currentYear - 1}-${currentYear - 1}`,
+      `Role B ${currentYear - 2}-${currentYear - 2}`,
+      `Role C ${currentYear - 3}-${currentYear - 3}`,
+      `Role D ${currentYear - 4}-${currentYear - 4}`,
+    ].join("\n");
+
+    const { result } = enforceCritiquePolicy({
+      modelResult: baseModelResult(),
+      normalization,
+      tailoredCV: cv,
+      coverLetter: "impact focus",
+      jobDescription: normalization.rawJobDescription,
+    });
+
+    expect(result.hardFloorTriggers).toEqual(
+      expect.arrayContaining(["HF_STABILITY_CONSEC_SHORT", "HF_STABILITY_ROLE_CHURN"])
+    );
+    expect(result.likelihoodScore).toBeLessThanOrEqual(35);
+  });
+
+  test("marks weak evidence for SQL requirement when only generic database wording exists", () => {
+    const normalization = normalizeJobDescription("Senior engineer. SQL required.");
+    const { result } = enforceCritiquePolicy({
+      modelResult: baseModelResult(),
+      normalization,
+      tailoredCV: "Worked on database management and cloud infrastructure.",
+      coverLetter: "Interested in data-heavy systems.",
+      jobDescription: normalization.rawJobDescription,
+    });
+
+    expect(result.requirementsCoverage?.find((r) => r.requirement === "sql")?.status).toBe(
+      "WEAK_EVIDENCE"
+    );
+    expect(result.redFlags?.some((f) => f.type === "EVIDENCE_QUALITY")).toBe(true);
   });
 });
 

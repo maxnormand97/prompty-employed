@@ -107,6 +107,53 @@ export const GapAdviceSchema = z.object({
 
 export type GapAdvice = z.infer<typeof GapAdviceSchema>;
 
+export const RedFlagSchema = z.object({
+  type: z.enum([
+    "RECENCY_GAP",
+    "SCALE_MISMATCH",
+    "STABILITY_RISK",
+    "COMPLIANCE_DOMAIN_GAP",
+    "EVIDENCE_QUALITY",
+    "DEGREE_REQUIREMENT_MISSING",
+    "DOMAIN_EVIDENCE_MISSING",
+  ]),
+  severity: z.enum(["LOW", "MEDIUM", "HIGH"]),
+  description: z.string().min(1),
+});
+
+export const HardFloorRuleIdSchema = z.enum([
+  "HF_DOMAIN_YEARS_SHORTFALL",
+  "HF_REQUIRED_MASTERS_MISSING",
+  "HF_NO_PRIMARY_DOMAIN_EVIDENCE",
+  "HF_SCALE_MISMATCH",
+  "HF_STABILITY_CONSEC_SHORT",
+  "HF_STABILITY_ROLE_CHURN",
+]);
+
+export const RequirementCoverageSchema = z.object({
+  requirement: z.string().min(1),
+  status: z.enum(["MET", "PARTIAL", "MISSING", "WEAK_EVIDENCE"]),
+  evidenceSummary: z.string().min(1),
+});
+
+export const NormalizationSummarySchema = z.object({
+  seniority: z.string().min(1),
+  requiredYears: z.number().int().min(0).optional(),
+  mandatoryStack: z.array(z.string()),
+  complianceSignals: z.array(z.string()),
+  domainSignals: z.array(z.string()),
+  scaleSignals: z.array(z.string()),
+  stabilitySensitiveWording: z.array(z.string()),
+  degreeRequirement: z.string().optional(),
+  uncertainLines: z.array(z.string()),
+});
+
+export const PolicyAdjustmentSchema = z.object({
+  ruleId: z.string().min(1),
+  penalty: z.number().int().min(0),
+  reason: z.string().min(1),
+});
+
 // ── AI output ─────────────────────────────────────────────────────────────
 
 export const TailoredOutputSchema = z.object({
@@ -131,6 +178,12 @@ export const TailoredOutputSchema = z.object({
   suggestedImprovements: z.array(z.string()),
   gapAnalysis: z.array(GapAdviceSchema),
   companySummary: z.string().optional(),
+  redFlags: z.array(RedFlagSchema).optional(),
+  hardFloorTriggers: z.array(HardFloorRuleIdSchema).optional(),
+  requirementsCoverage: z.array(RequirementCoverageSchema).optional(),
+  confidenceScore: Score0to100Schema.optional(),
+  normalizationSummary: NormalizationSummarySchema.optional(),
+  policyAdjustments: z.array(PolicyAdjustmentSchema).optional(),
 });
 
 export type TailoredOutput = z.infer<typeof TailoredOutputSchema>;

@@ -222,6 +222,47 @@ describe('TailoredOutputSchema — companySummary (optional)', () => {
   it('rejects a result with a fitScore out of range', () => {
     expect(TailoredOutputSchema.safeParse({ ...base, fitScore: 101 }).success).toBe(false);
   });
+
+  it('accepts decision-grade optional fields', () => {
+    const result = TailoredOutputSchema.safeParse({
+      ...base,
+      redFlags: [
+        {
+          type: 'RECENCY_GAP',
+          severity: 'HIGH',
+          description: 'Primary stack has not been used recently enough for this role level.',
+        },
+      ],
+      hardFloorTriggers: ['HF_DOMAIN_YEARS_SHORTFALL'],
+      requirementsCoverage: [
+        {
+          requirement: 'sql',
+          status: 'PARTIAL',
+          evidenceSummary: 'SQL last used 3 years ago.',
+        },
+      ],
+      confidenceScore: 64,
+      normalizationSummary: {
+        seniority: 'SENIOR',
+        requiredYears: 5,
+        mandatoryStack: ['typescript', 'sql'],
+        complianceSignals: ['pci-dss'],
+        domainSignals: ['fintech'],
+        scaleSignals: ['distributed systems'],
+        stabilitySensitiveWording: ['fast-paced'],
+        degreeRequirement: 'MASTERS',
+        uncertainLines: ['Nice to have: Rust'],
+      },
+      policyAdjustments: [
+        {
+          ruleId: 'PENALTY_PRIMARY_STACK_NOT_RECENT',
+          penalty: 15,
+          reason: 'Primary stack appears only in older experience blocks.',
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('TailoredOutputSchema — NO_FIT results', () => {

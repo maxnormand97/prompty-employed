@@ -15,6 +15,17 @@ import { PipelineStatus } from "./_components/pipeline-status";
 import { ResumeDraftCard } from "./_components/resume-draft-card";
 import { ScorecardCard } from "./_components/scorecard-card";
 
+function formatCompletedAt(iso: string): string {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "UTC",
+  });
+
+  return `${formatter.format(new Date(iso))} UTC`;
+}
+
 
 export default function JobPage() {
   const router = useRouter();
@@ -25,10 +36,14 @@ export default function JobPage() {
 
   const isNoFit = result?.fitVerdict === "NO_FIT";
   const isFailed = status === "FAILED";
-  const [now] = useState(() => Date.now());
-  const daysSince = result
-    ? Math.floor((now - new Date(result.completedAt).getTime()) / 86_400_000)
-    : 0;
+  const [clientNow] = useState<number | null>(() =>
+    typeof window !== "undefined" ? Date.now() : null
+  );
+
+  const daysSince =
+    result && clientNow != null
+      ? Math.floor((clientNow - new Date(result.completedAt).getTime()) / 86_400_000)
+      : null;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-12 space-y-12">
@@ -90,12 +105,12 @@ export default function JobPage() {
             </h2>
             <p className="text-base text-muted-foreground mt-1">
               {isNoFit
-                ? `Assessed ${new Date(result.completedAt).toLocaleTimeString()}`
-                : `All four artefacts generated in one run · ${new Date(result.completedAt).toLocaleTimeString()}`}
+                ? `Assessed ${formatCompletedAt(result.completedAt)}`
+                : `All four artefacts generated in one run · ${formatCompletedAt(result.completedAt)}`}
             </p>
           </div>
 
-          {daysSince >= 1 && (
+          {daysSince != null && daysSince >= 1 && (
             <div
               className={`rounded-lg border px-4 py-2.5 text-sm flex items-center gap-2 ${
                 daysSince > 7

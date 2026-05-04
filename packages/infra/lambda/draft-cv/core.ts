@@ -62,7 +62,8 @@ export async function runDraftCV(
       writeS3Object(s3, resultsBucketName, `results/${jobId}/audit/screen-raw-response.txt`, rawScreenResponse),
     ]);
 
-    // Parse the screen verdict — fail-open: if parsing fails, treat as FIT
+    // Parse the screen verdict in strict mode.
+    // On malformed output, fail safe to NO_FIT with explicit audit reason.
     let fitVerdict: "FIT" | "NO_FIT" = "FIT";
     let fitReason: string | undefined;
     try {
@@ -74,9 +75,13 @@ export async function runDraftCV(
           "Candidate does not meet minimum requirements for this role.";
       }
     } catch {
-      log("warn", "Screen response was not valid JSON — treating as FIT", {
+      fitVerdict = "NO_FIT";
+      fitReason =
+        "Strict-safe fallback triggered: pre-screen output was malformed and cannot be trusted.";
+      log("warn", "Screen response was not valid JSON — strict-safe NO_FIT", {
         jobId,
         rawScreenResponse,
+        fitReason,
       });
     }
 
