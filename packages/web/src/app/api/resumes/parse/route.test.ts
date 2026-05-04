@@ -79,6 +79,26 @@ describe("POST /api/resumes/parse", () => {
     });
   });
 
+  it("returns 413 when the file exceeds the 5 MB size limit", async () => {
+    // Create a File whose .size is just above 5 MB via a large ArrayBuffer
+    const bigBuffer = new ArrayBuffer(5 * 1024 * 1024 + 1);
+    const bigFile = new File([bigBuffer], "resume.pdf", { type: "application/pdf" });
+    const res = await POST(makeRequest(bigFile));
+    expect(res.status).toBe(413);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/file too large/i),
+    });
+    expect(parseMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a file exactly at the 5 MB size limit", async () => {
+    const exactBuffer = new ArrayBuffer(5 * 1024 * 1024);
+    const exactFile = new File([exactBuffer], "resume.pdf", { type: "application/pdf" });
+    const res = await POST(makeRequest(exactFile));
+    expect(res.status).toBe(200);
+    expect(parseMock).toHaveBeenCalledTimes(1);
+  });
+
   it("uses pdf-parse for pdf files", async () => {
     const res = await POST(
       makeRequest(new File([new Uint8Array([1, 2, 3])], "resume.pdf", { type: "application/pdf" }))

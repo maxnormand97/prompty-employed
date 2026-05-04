@@ -3,6 +3,9 @@ import { getResumeParser } from "@/lib/resume-parsing";
 
 export const runtime = "nodejs";
 
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_TEXT_LENGTH = 50_000; // characters
+
 const ALLOWED_EXTENSIONS = new Set(["pdf", "docx", "txt"]);
 const MIME_TO_FILE_TYPE = new Map<string, "pdf" | "docx" | "txt">([
   ["application/pdf", "pdf"],
@@ -55,8 +58,16 @@ export async function POST(request: Request) {
     );
   }
 
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    return NextResponse.json(
+      { error: "File too large. Maximum upload size is 5 MB." },
+      { status: 413 }
+    );
+  }
+
   try {
-    const text = (await parseResumeFile(file, fileType)).trim();
+    const raw = (await parseResumeFile(file, fileType)).trim();
+    const text = raw.slice(0, MAX_TEXT_LENGTH);
     return NextResponse.json({
       name: file.name,
       fileType,

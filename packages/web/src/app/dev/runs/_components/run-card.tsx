@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import type { RunSummary } from "@/lib/server/dev-db";
 import type { RunDetail } from "@/lib/server/dev-db";
 import { cn } from "@/lib/utils";
+import { downloadMarkdown } from "@/lib/markdown";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -66,16 +67,6 @@ function scoreColor(score: number | null, verdict: string | null): string {
 
 // ── Download helper ────────────────────────────────────────────────────────
 
-function triggerTextDownload(filename: string, content: string) {
-  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 async function downloadOutputs(jobId: string): Promise<void> {
   const res = await fetch(`/api/dev/runs/${jobId}`);
   if (!res.ok) throw new Error("Failed to fetch run detail");
@@ -84,8 +75,8 @@ async function downloadOutputs(jobId: string): Promise<void> {
   if (!result) throw new Error("No result data available for this run");
 
   const slug = jobId.slice(0, 8);
-  if (result.tailoredCV) triggerTextDownload(`cv-${slug}.md`, result.tailoredCV);
-  if (result.coverLetter) triggerTextDownload(`cover-letter-${slug}.md`, result.coverLetter);
+  if (result.tailoredCV) downloadMarkdown(result.tailoredCV, `cv-${slug}.md`);
+  if (result.coverLetter) downloadMarkdown(result.coverLetter, `cover-letter-${slug}.md`);
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
