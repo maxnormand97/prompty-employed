@@ -23,8 +23,6 @@ export interface CritiqueCVOutput {
   companySummary?: string;
   redFlags?: RedFlag[];
   hardFloorTriggers?: HardFloorRuleId[];
-  requirementsCoverage?: RequirementCoverage[];
-  confidenceScore?: number;
   normalizationSummary?: NormalizationSummary;
   policyAdjustments?: PolicyAdjustment[];
 }
@@ -36,13 +34,8 @@ export interface GapAdvice {
 }
 
 export type RedFlagType =
-  | "RECENCY_GAP"
-  | "SCALE_MISMATCH"
   | "STABILITY_RISK"
-  | "COMPLIANCE_DOMAIN_GAP"
-  | "EVIDENCE_QUALITY"
-  | "DEGREE_REQUIREMENT_MISSING"
-  | "DOMAIN_EVIDENCE_MISSING";
+  | "DEGREE_REQUIREMENT_MISSING";
 
 export type RedFlagSeverity = "LOW" | "MEDIUM" | "HIGH";
 
@@ -53,29 +46,13 @@ export interface RedFlag {
 }
 
 export type HardFloorRuleId =
-  | "HF_DOMAIN_YEARS_SHORTFALL"
   | "HF_REQUIRED_MASTERS_MISSING"
-  | "HF_NO_PRIMARY_DOMAIN_EVIDENCE"
-  | "HF_SCALE_MISMATCH"
   | "HF_STABILITY_CONSEC_SHORT"
   | "HF_STABILITY_ROLE_CHURN";
-
-export type RequirementCoverageStatus = "MET" | "PARTIAL" | "MISSING" | "WEAK_EVIDENCE";
-
-export interface RequirementCoverage {
-  requirement: string;
-  status: RequirementCoverageStatus;
-  evidenceSummary: string;
-}
 
 export interface NormalizationSummary {
   seniority: string;
   requiredYears?: number;
-  mandatoryStack: string[];
-  complianceSignals: string[];
-  domainSignals: string[];
-  scaleSignals: string[];
-  stabilitySensitiveWording: string[];
   degreeRequirement?: string;
   uncertainLines: string[];
 }
@@ -90,12 +67,6 @@ export interface RoleNormalization {
   rawJobDescription: string;
   seniority: string;
   requiredYears?: number;
-  primaryDomain?: string;
-  mandatoryStack: string[];
-  complianceSignals: string[];
-  domainSignals: string[];
-  scaleSignals: string[];
-  stabilitySensitiveWording: string[];
   degreeRequirement?: "MASTERS" | "PHD";
   uncertainLines: string[];
 }
@@ -112,8 +83,6 @@ export interface CritiqueResult {
   companySummary?: string;
   redFlags?: RedFlag[];
   hardFloorTriggers?: HardFloorRuleId[];
-  requirementsCoverage?: RequirementCoverage[];
-  confidenceScore?: number;
   normalizationSummary?: NormalizationSummary;
   policyAdjustments?: PolicyAdjustment[];
 }

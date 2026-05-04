@@ -367,7 +367,7 @@ describe("parseCritiqueResponse", () => {
 });
 
 describe("normalizeJobDescription", () => {
-  test("extracts seniority, years, stack, compliance and uncertainty markers", () => {
+  test("extracts seniority, years, degree requirement and uncertainty markers", () => {
     const jd = [
       "Senior FinTech Platform Engineer",
       "Requires 6+ years experience in fintech domain.",
@@ -380,11 +380,6 @@ describe("normalizeJobDescription", () => {
     const normalized = normalizeJobDescription(jd);
     expect(normalized.seniority).toBe("SENIOR");
     expect(normalized.requiredYears).toBe(6);
-    expect(normalized.domainSignals).toContain("fintech");
-    expect(normalized.complianceSignals).toContain("pci-dss");
-    expect(normalized.mandatoryStack).toEqual(
-      expect.arrayContaining(["typescript", "sql", "aws", "microservices"])
-    );
     expect(normalized.degreeRequirement).toBe("MASTERS");
     expect(normalized.uncertainLines.length).toBeGreaterThan(0);
   });
@@ -403,27 +398,6 @@ describe("enforceCritiquePolicy", () => {
     };
   }
 
-  test("applies domain floors and complex-domain penalty when domain evidence is missing", () => {
-    const normalization = normalizeJobDescription(
-      "Senior FinTech engineer with 5+ years in fintech. TypeScript required."
-    );
-    const { result } = enforceCritiquePolicy({
-      modelResult: baseModelResult(),
-      normalization,
-      tailoredCV: "Senior software engineer with TypeScript and React.",
-      coverLetter: "I have built SaaS products.",
-      jobDescription: normalization.rawJobDescription,
-    });
-
-    expect(result.fitScore).toBeLessThanOrEqual(20);
-    expect(result.likelihoodScore).toBeLessThanOrEqual(20);
-    expect(result.hardFloorTriggers).toContain("HF_NO_PRIMARY_DOMAIN_EVIDENCE");
-    expect(result.hardFloorTriggers).toContain("HF_DOMAIN_YEARS_SHORTFALL");
-    expect(result.policyAdjustments?.some((p) => p.ruleId === "PENALTY_COMPLEX_DOMAIN_GAP")).toBe(
-      true
-    );
-  });
-
   test("applies degree floor when JD requires masters and CV only shows bachelors", () => {
     const normalization = normalizeJobDescription(
       "Lead engineer role. Master's degree required. TypeScript and AWS required."
@@ -439,24 +413,6 @@ describe("enforceCritiquePolicy", () => {
 
     expect(result.likelihoodScore).toBeLessThanOrEqual(35);
     expect(result.hardFloorTriggers).toContain("HF_REQUIRED_MASTERS_MISSING");
-  });
-
-  test("applies scale mismatch clamp and red flag when scale signals lack evidence", () => {
-    const normalization = normalizeJobDescription(
-      "Senior backend engineer. Microservices and distributed systems experience required."
-    );
-    const { result } = enforceCritiquePolicy({
-      modelResult: baseModelResult(),
-      normalization,
-      tailoredCV:
-        "Built internal tools and small website dashboards for operations teams in a startup.",
-      coverLetter: "I value pragmatic engineering.",
-      jobDescription: normalization.rawJobDescription,
-    });
-
-    expect(result.fitScore).toBeLessThanOrEqual(50);
-    expect(result.hardFloorTriggers).toContain("HF_SCALE_MISMATCH");
-    expect(result.redFlags?.some((f) => f.type === "SCALE_MISMATCH")).toBe(true);
   });
 
   test("applies stability floors for consecutive short roles and role churn", () => {
@@ -483,21 +439,6 @@ describe("enforceCritiquePolicy", () => {
     expect(result.likelihoodScore).toBeLessThanOrEqual(35);
   });
 
-  test("marks weak evidence for SQL requirement when only generic database wording exists", () => {
-    const normalization = normalizeJobDescription("Senior engineer. SQL required.");
-    const { result } = enforceCritiquePolicy({
-      modelResult: baseModelResult(),
-      normalization,
-      tailoredCV: "Worked on database management and cloud infrastructure.",
-      coverLetter: "Interested in data-heavy systems.",
-      jobDescription: normalization.rawJobDescription,
-    });
-
-    expect(result.requirementsCoverage?.find((r) => r.requirement === "sql")?.status).toBe(
-      "WEAK_EVIDENCE"
-    );
-    expect(result.redFlags?.some((f) => f.type === "EVIDENCE_QUALITY")).toBe(true);
-  });
 });
 
 // ── buildCritiquePrompt ────────────────────────────────────────────────────

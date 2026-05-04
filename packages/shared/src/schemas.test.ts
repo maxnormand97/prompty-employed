@@ -228,36 +228,23 @@ describe('TailoredOutputSchema — companySummary (optional)', () => {
       ...base,
       redFlags: [
         {
-          type: 'RECENCY_GAP',
+          type: 'STABILITY_RISK',
           severity: 'HIGH',
-          description: 'Primary stack has not been used recently enough for this role level.',
+          description: 'Role churn is high for a non-contractor profile in the last four years.',
         },
       ],
-      hardFloorTriggers: ['HF_DOMAIN_YEARS_SHORTFALL'],
-      requirementsCoverage: [
-        {
-          requirement: 'sql',
-          status: 'PARTIAL',
-          evidenceSummary: 'SQL last used 3 years ago.',
-        },
-      ],
-      confidenceScore: 64,
+      hardFloorTriggers: ['HF_STABILITY_ROLE_CHURN'],
       normalizationSummary: {
         seniority: 'SENIOR',
         requiredYears: 5,
-        mandatoryStack: ['typescript', 'sql'],
-        complianceSignals: ['pci-dss'],
-        domainSignals: ['fintech'],
-        scaleSignals: ['distributed systems'],
-        stabilitySensitiveWording: ['fast-paced'],
         degreeRequirement: 'MASTERS',
         uncertainLines: ['Nice to have: Rust'],
       },
       policyAdjustments: [
         {
-          ruleId: 'PENALTY_PRIMARY_STACK_NOT_RECENT',
-          penalty: 15,
-          reason: 'Primary stack appears only in older experience blocks.',
+          ruleId: 'PENALTY_NO_MEASURABLE_OUTCOMES',
+          penalty: 10,
+          reason: 'Senior/lead profile without measurable outcomes evidence.',
         },
       ],
     });
