@@ -26,6 +26,15 @@ They want:
 
 The user arrives at the Promptly Employed web app. They see a clean, single-purpose input form with two text areas and a submit button. No sign-up required. No distractions.
 
+Before submitting, they can also choose from a local **Resume Library**:
+
+- Upload a resume file in **PDF, DOCX, or TXT** format
+- Keep multiple saved resume variants locally in the browser
+- Select which saved resume to use for the next application
+- Replace or delete older resume versions from a dedicated `/resumes` page
+
+The selected resume fills the master resume field automatically, but the user can still edit the text before submission if they want to make small changes for that run.
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │              Promptly Employed                          │
@@ -201,11 +210,24 @@ The user can resubmit immediately. The original inputs are not stored server-sid
 
 ---
 
+**US-00 — Manage multiple resumes locally**
+> As a job seeker, I want to keep multiple resume versions in the app and switch between them quickly, so that I can tailor different applications from the most relevant starting point.
+
+**Acceptance criteria:**
+- I can open a dedicated resume management area
+- I can upload a resume as PDF, DOCX, or TXT
+- Uploaded resumes are parsed into plain text for use in the tailoring pipeline
+- I can store more than one resume version locally in my browser
+- I can select one saved resume as the active resume for my next application
+- I can delete a saved resume I no longer need
+- I can replace an existing saved resume with a newer file
+
 **US-01 — Submit an application**
 > As a job seeker, I want to paste my master resume and a job description into a form and submit it, so that the pipeline can generate tailored application materials for me.
 
 **Acceptance criteria:**
 - The form accepts plain text in both fields
+- I can either paste resume text manually or choose a saved resume from the Resume Library
 - Resume must be at least 200 characters; job description at least 50 characters
 - Both inputs are capped at 15 000 characters to prevent abuse
 - Submitting navigates me to the live status screen

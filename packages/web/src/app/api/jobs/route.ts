@@ -130,7 +130,17 @@ export async function POST(request: NextRequest) {
       new StartExecutionCommand({
         stateMachineArn,
         name: jobId,
-        input: JSON.stringify({ jobId, s3ResumeKey, s3JobDescKey, ...(s3CompanyInfoKey ? { s3CompanyInfoKey } : {}) }),
+        input: JSON.stringify({
+          jobId,
+          s3ResumeKey,
+          s3JobDescKey,
+          ...(parsed.data.selectedResumeId ? { selectedResumeId: parsed.data.selectedResumeId } : {}),
+          ...(parsed.data.resumeName ? { resumeName: parsed.data.resumeName } : {}),
+          ...(parsed.data.resumeSource ? { resumeSource: parsed.data.resumeSource } : {}),
+          ...(parsed.data.resumeFileType ? { resumeFileType: parsed.data.resumeFileType } : {}),
+          ...(parsed.data.resumeMimeType ? { resumeMimeType: parsed.data.resumeMimeType } : {}),
+          ...(s3CompanyInfoKey ? { s3CompanyInfoKey } : {}),
+        }),
       })
     );
   } catch (err) {

@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ClearAllButton } from "./_components/clear-all-button";
+import { RunCard } from "./_components/run-card";
 
 export default async function DevRunsPage() {
   if (process.env.NODE_ENV !== "development") {
@@ -57,67 +57,7 @@ export default async function DevRunsPage() {
       ) : (
         <div className="space-y-3">
           {runs.map((run) => (
-            <Card
-              key={run.job_id}
-              className="border-border/50 bg-card/50 hover:bg-card/80 transition-colors"
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1 min-w-0">
-                    <CardTitle className="text-sm font-mono text-muted-foreground truncate">
-                      <Link
-                        href={`/jobs/${run.job_id}`}
-                        className="hover:text-violet-400 transition-colors"
-                      >
-                        {run.job_id}
-                      </Link>
-                    </CardTitle>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>
-                        {new Date(run.submitted_at).toLocaleString(undefined, {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })}
-                      </span>
-                      {run.completed_at && (
-                        <>
-                          <span>·</span>
-                          <span className="text-green-500/80">Completed</span>
-                        </>
-                      )}
-                      {!run.completed_at && (
-                        <>
-                          <span>·</span>
-                          <span className="text-yellow-500/80">Pending</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {run.fit_score != null && (
-                      <span className="text-sm font-semibold text-foreground tabular-nums">
-                        {run.fit_score}%
-                      </span>
-                    )}
-                    {run.fit_verdict === "FIT" && (
-                      <Badge className="bg-green-600/20 text-green-400 border-green-600/30 hover:bg-green-600/30">
-                        FIT
-                      </Badge>
-                    )}
-                    {run.fit_verdict === "NO_FIT" && (
-                      <Badge className="bg-red-600/20 text-red-400 border-red-600/30 hover:bg-red-600/30">
-                        NO FIT
-                      </Badge>
-                    )}
-                    {!run.fit_verdict && (
-                      <Badge variant="outline" className="text-muted-foreground">
-                        —
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-            </Card>
+            <RunCard key={run.job_id} run={run} />
           ))}
         </div>
       )}

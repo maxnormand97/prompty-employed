@@ -2,11 +2,39 @@ import { z } from "zod";
 
 // ── Inbound payload ────────────────────────────────────────────────────────
 
+export const ResumeSourceSchema = z.enum(["manual", "upload"]);
+
+export const ResumeFileTypeSchema = z.enum(["pdf", "docx", "txt"]);
+
+export const ResumeRecordSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).max(200),
+  text: z
+    .string()
+    .min(200, "Resume text must be at least 200 characters")
+    .max(15000, "Resume text must not exceed 15 000 characters"),
+  source: ResumeSourceSchema,
+  fileType: ResumeFileTypeSchema.optional(),
+  mimeType: z.string().min(1).max(200).optional(),
+  uploadedAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastUsedAt: z.string().datetime().optional(),
+});
+
+export type ResumeSource = z.infer<typeof ResumeSourceSchema>;
+export type ResumeFileType = z.infer<typeof ResumeFileTypeSchema>;
+export type ResumeRecord = z.infer<typeof ResumeRecordSchema>;
+
 export const JobSubmissionSchema = z.object({
   masterResume: z
     .string()
     .min(200, "Master resume must be at least 200 characters")
     .max(15000, "Master resume must not exceed 15 000 characters"),
+  selectedResumeId: z.string().min(1).optional(),
+  resumeName: z.string().min(1).max(200).optional(),
+  resumeSource: ResumeSourceSchema.optional(),
+  resumeFileType: ResumeFileTypeSchema.optional(),
+  resumeMimeType: z.string().min(1).max(200).optional(),
   jobDescription: z
     .string()
     .min(50, "Job description must be at least 50 characters")
@@ -59,6 +87,11 @@ export const StepFunctionInputSchema = z.object({
   jobId: z.string().uuid(),
   s3ResumeKey: z.string(),
   s3JobDescKey: z.string(),
+  selectedResumeId: z.string().min(1).optional(),
+  resumeName: z.string().min(1).max(200).optional(),
+  resumeSource: ResumeSourceSchema.optional(),
+  resumeFileType: ResumeFileTypeSchema.optional(),
+  resumeMimeType: z.string().min(1).max(200).optional(),
   s3CompanyInfoKey: z.string().optional(),
 });
 
