@@ -73,6 +73,7 @@ export async function POST(request: Request) {
       fileType,
       mimeType: file.type || undefined,
       text,
+      truncated: raw.length > MAX_TEXT_LENGTH,
     });
   } catch (error) {
     console.error("Failed to parse uploaded resume", {
