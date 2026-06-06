@@ -31,10 +31,9 @@ export interface UseResumeLibraryState {
 }
 
 export function useResumeLibrary(): UseResumeLibraryState {
-  const [resumes, setResumes] = useState<ResumeRecord[]>(() => listStoredResumes());
-  const [selectedResumeId, setSelectedResumeIdState] = useState<string | null>(() =>
-    getSelectedResumeId()
-  );
+  const [resumes, setResumes] = useState<ResumeRecord[]>(listStoredResumes);
+  const [selectedResumeId, setSelectedResumeIdState] = useState<string | null>(getSelectedResumeId);
+  const [loaded, setLoaded] = useState(true);
 
   const refresh = useCallback(() => {
     setResumes(listStoredResumes());
@@ -73,7 +72,7 @@ export function useResumeLibrary(): UseResumeLibraryState {
     resumes,
     selectedResumeId,
     selectedResume,
-    loaded: true,
+    loaded,
     saveResume,
     selectResume,
     removeResume,

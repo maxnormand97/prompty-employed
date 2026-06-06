@@ -32,6 +32,8 @@ export { setJobCritiquing, setJobComplete, setJobFailed } from "./lib/dynamo";
 export { invokeBedrockText } from "./lib/bedrock";
 export { buildCritiquePrompt } from "./lib/prompt";
 export { parseCritiqueResponse } from "./lib/response";
+export { normalizeJobDescription } from "./lib/normalization";
+export { enforceCritiquePolicy } from "./lib/policy";
 export { runCritiqueCV } from "./core";
 export type {
   CritiqueCVInput,
@@ -40,6 +42,12 @@ export type {
   CritiqueCVEnv,
   GapAdvice,
   CritiqueResult,
+  RedFlag,
+  HardFloorRuleId,
+  RequirementCoverage,
+  NormalizationSummary,
+  PolicyAdjustment,
+  RoleNormalization,
 } from "./lib/types";
 
 // ── Lambda handler ─────────────────────────────────────────────────────────

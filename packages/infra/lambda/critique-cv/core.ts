@@ -4,6 +4,8 @@ import { setJobCritiquing, setJobComplete, setJobFailed } from "./lib/dynamo";
 import { invokeBedrockText } from "./lib/bedrock";
 import { buildCritiquePrompt } from "./lib/prompt";
 import { parseCritiqueResponse } from "./lib/response";
+import { normalizeJobDescription } from "./lib/normalization";
+import { enforceCritiquePolicy } from "./lib/policy";
 import {
   CritiqueCVInput,
   CritiqueCVOutput,
@@ -53,16 +55,25 @@ export async function runCritiqueCV(
       companyInfoLength: companyInfo?.length ?? 0,
     });
 
-    // 3. Build prompt and call Bedrock
+    // 3. Normalize JD, build prompt and call Bedrock
+    const normalization = normalizeJobDescription(jobDescription);
     const prompt = buildCritiquePrompt(tailoredCV, coverLetter, jobDescription, companyInfo);
     const rawResponse = await invokeBedrockText(bedrock, bedrockModelId, prompt);
 
-    // 4. Parse and validate the response
-    const result = parseCritiqueResponse(rawResponse);
+    // 4. Parse, validate and deterministically enforce policy constraints
+    const parsedResult = parseCritiqueResponse(rawResponse);
+    const { result } = enforceCritiquePolicy({
+      modelResult: parsedResult,
+      normalization,
+      tailoredCV,
+      coverLetter,
+      jobDescription,
+    });
     log("info", "Critique parsed", {
       jobId,
       fitScore: result.fitScore,
       likelihoodScore: result.likelihoodScore,
+      hardFloorTriggers: result.hardFloorTriggers,
     });
 
     // 5. Write analysis JSON to S3
@@ -97,6 +108,12 @@ export async function runCritiqueCV(
       suggestedImprovements: result.suggestedImprovements,
       gapAnalysis: result.gapAnalysis,
       companySummary: result.companySummary,
+      redFlags: result.redFlags,
+      hardFloorTriggers: result.hardFloorTriggers,
+      requirementsCoverage: result.requirementsCoverage,
+      confidenceScore: result.confidenceScore,
+      normalizationSummary: result.normalizationSummary,
+      policyAdjustments: result.policyAdjustments,
     };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);

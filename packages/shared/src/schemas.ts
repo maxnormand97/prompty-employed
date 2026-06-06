@@ -107,6 +107,34 @@ export const GapAdviceSchema = z.object({
 
 export type GapAdvice = z.infer<typeof GapAdviceSchema>;
 
+export const RedFlagSchema = z.object({
+  type: z.enum([
+    "STABILITY_RISK",
+    "DEGREE_REQUIREMENT_MISSING",
+  ]),
+  severity: z.enum(["LOW", "MEDIUM", "HIGH"]),
+  description: z.string().min(1),
+});
+
+export const HardFloorRuleIdSchema = z.enum([
+  "HF_REQUIRED_MASTERS_MISSING",
+  "HF_STABILITY_CONSEC_SHORT",
+  "HF_STABILITY_ROLE_CHURN",
+]);
+
+export const NormalizationSummarySchema = z.object({
+  seniority: z.string().min(1),
+  requiredYears: z.number().int().min(0).optional(),
+  degreeRequirement: z.string().optional(),
+  uncertainLines: z.array(z.string()),
+});
+
+export const PolicyAdjustmentSchema = z.object({
+  ruleId: z.string().min(1),
+  penalty: z.number().int().min(0),
+  reason: z.string().min(1),
+});
+
 // ── AI output ─────────────────────────────────────────────────────────────
 
 export const TailoredOutputSchema = z.object({
@@ -131,6 +159,10 @@ export const TailoredOutputSchema = z.object({
   suggestedImprovements: z.array(z.string()),
   gapAnalysis: z.array(GapAdviceSchema),
   companySummary: z.string().optional(),
+  redFlags: z.array(RedFlagSchema).optional(),
+  hardFloorTriggers: z.array(HardFloorRuleIdSchema).optional(),
+  normalizationSummary: NormalizationSummarySchema.optional(),
+  policyAdjustments: z.array(PolicyAdjustmentSchema).optional(),
 });
 
 export type TailoredOutput = z.infer<typeof TailoredOutputSchema>;
