@@ -99,7 +99,7 @@ The key design choice is that the browser only ever talks to Next.js. All AWS ca
 flowchart LR
   User[User in Browser] --> UI[Next.js App Router UI]
   UI -->|POST /api/jobs| JobRoute[Next.js route handler]
-  UI -->|EventSource /api/jobs/{jobId}/stream| StreamRoute[Next.js SSE route]
+  UI -->|EventSource stream| StreamRoute[Next.js SSE route]
 
   JobRoute --> S3Inputs[(S3: input artefacts)]
   JobRoute --> JobsTable[(DynamoDB: jobs table)]
