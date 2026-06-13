@@ -26,5 +26,16 @@ node_modules/
 # npm lockfile (this repo uses pnpm)
 package-lock.json
 
+# Terraform local artifacts
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
 # TypeScript incremental build info
 *.tsbuildinfo
